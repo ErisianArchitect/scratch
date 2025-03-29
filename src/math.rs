@@ -162,13 +162,13 @@ pub fn raycast<F: FnMut(&IVec3, f32) -> bool>(
         if t_max.x <= t_max.y {
             if t_max.x <= t_max.z {
                 cell.x += step.x;
-                if !callback(&cell, t_max.x) {
+                if callback(&cell, t_max.x) {
                     return;
                 }
                 t_max.x += delta.x;
             } else {
                 cell.z += step.z;
-                if !callback(&cell, t_max.z) {
+                if callback(&cell, t_max.z) {
                     return;
                 }
                 t_max.z += delta.z;
@@ -176,13 +176,13 @@ pub fn raycast<F: FnMut(&IVec3, f32) -> bool>(
         } else {
             if t_max.y <= t_max.z {
                 cell.y += step.y;
-                if !callback(&cell, t_max.y) {
+                if callback(&cell, t_max.y) {
                     return;
                 }
                 t_max.y += delta.y;
             } else {
                 cell.z += step.z;
-                if !callback(&cell, t_max.z) {
+                if callback(&cell, t_max.z) {
                     return;
                 }
                 t_max.z += delta.z;

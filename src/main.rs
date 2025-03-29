@@ -183,7 +183,7 @@ fn main() {
                 *last_d = d;
                 *counter += 1;
                 // d < 1000.0
-                *counter < 1000
+                *counter >= 1000
             });
         }
         total += counter;
