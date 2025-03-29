@@ -161,7 +161,7 @@ fn hor_line<F: FnMut(i32, i32)>(x_range: std::ops::Range<i32>, y: i32, mut f: F)
 
 fn main() {
     use glam::*;
-    use scratch::maths::*;
+    use scratch::math::*;
     let point = vec3(0.5, 0.5, 0.5);
     let direction = vec3(1.0, 2.0, 0.0).normalize();
     let cell_size = Vec3::ONE;

@@ -5,5 +5,5 @@ pub mod perlin;
 pub mod open_simplex;
 pub mod shared;
 pub mod diff_plot;
-pub mod maths;
+pub mod math;
 pub mod chunk;
