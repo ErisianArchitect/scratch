@@ -167,26 +167,31 @@ fn main() {
     let cell_size = Vec3::ONE;
     let cell_offset = Vec3::ZERO;
     let mut counter = 0usize;
+    let mut total = 0usize;
     let start = std::time::Instant::now();
     let mut last = IVec3::ZERO;
-    let mut last_i = 0;
     let mut last_d = 0.0;
-    for _ in 0..(640*360) {
-        #[no_mangle]
-        raycast(point, direction, cell_size, cell_offset, 100, |p, i, d| {
-            // println!("{p} {i}");
-            counter += 1;
-            last = std::hint::black_box(p);
-            last_i = std::hint::black_box(i);
-            last_d = std::hint::black_box(d);
-            true
-        });
+    for _ in 0..(10000) {
+        counter = 0;
+        {
+            let counter = &mut counter;
+            let last = &mut last;
+            let last_d = &mut last_d;
+            #[no_mangle]
+            raycast(point, direction, cell_size, cell_offset, move |p, d| {
+                last.clone_from(p);
+                *last_d = d;
+                *counter += 1;
+                // d < 1000.0
+                *counter < 1000
+            });
+        }
+        total += counter;
     }
     println!("Elapsed: {:?}", start.elapsed());
     println!("Last: {last:?}");
-    println!("Last Index: {last_i}");
     println!("Hit Point: {}", point + direction * last_d);
-    println!("Counter: {counter}");
+    println!("Counter: {total}");
     return;
     fn in_bounds(x: i32, y: i32) -> bool {
         x >= 0 && y >= 0 && x < 1024 && y < 1024

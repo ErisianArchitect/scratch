@@ -119,12 +119,11 @@ pub fn next_face(point: Vec3, direction: Vec3, cell_size: Vec3, cell_offset: Vec
 //     }
 // }
 
-pub fn raycast<F: FnMut(IVec3, u32, f32) -> bool>(
+pub fn raycast<F: FnMut(&IVec3, f32) -> bool>(
     ray_origin: Vec3,
     ray_direction: Vec3,
     cell_size: Vec3,
     cell_offset: Vec3,
-    step_count: u32,
     mut callback: F,
 ) {
     fn calc_step(cell_size: f32, magnitude: f32) -> f32 {
@@ -158,26 +157,34 @@ pub fn raycast<F: FnMut(IVec3, u32, f32) -> bool>(
     );
  
     let mut cell = (origin / cell_size).floor().as_ivec3();
-    callback(cell, 0, 0.0);
-    for step_index in 1..step_count {
+    callback(&cell, 0.0);
+    loop {
         if t_max.x <= t_max.y {
             if t_max.x <= t_max.z {
                 cell.x += step.x;
-                callback(cell, step_index, t_max.x);
+                if !callback(&cell, t_max.x) {
+                    return;
+                }
                 t_max.x += delta.x;
             } else {
                 cell.z += step.z;
-                callback(cell, step_index, t_max.z);
+                if !callback(&cell, t_max.z) {
+                    return;
+                }
                 t_max.z += delta.z;
             }
         } else {
             if t_max.y <= t_max.z {
                 cell.y += step.y;
-                callback(cell, step_index, t_max.y);
+                if !callback(&cell, t_max.y) {
+                    return;
+                }
                 t_max.y += delta.y;
             } else {
                 cell.z += step.z;
-                callback(cell, step_index, t_max.z);
+                if !callback(&cell, t_max.z) {
+                    return;
+                }
                 t_max.z += delta.z;
             }
         }
@@ -207,11 +214,11 @@ fn raycast_test() {
     let cell_offset = Vec3::ZERO;
     // let mut counter = 0usize;
     let start = std::time::Instant::now();
-    raycast(point, direction, cell_size, cell_offset, 5, |p, i, d| {
-        println!("{p:?}, {d}, {i}");
+    raycast(point, direction, cell_size, cell_offset, |p, d| {
+        println!("{p:?}, {d}");
         let loc = point + direction * d;
         println!("Location: {loc:?}");
-        true
+        d < 100.0
     });
     // for _ in 0..256 {
     //     for _ in 0..256 {
