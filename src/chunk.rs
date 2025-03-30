@@ -226,6 +226,17 @@ impl Chunk {
             scale(t_max.y),
             scale(t_max.z),
         );
+        let idelta = ivec3(
+            scale(delta.x),
+            scale(delta.y),
+            scale(delta.z),
+        );
+        let idelta_max = ivec3(
+            scale(delta_max.x),
+            scale(delta_max.y),
+            scale(delta_max.z),
+        );
+        let i_max_dist = scale(max_distance);
 
         let mut cell = ray.pos.floor().as_ivec3();
         let coord = (
@@ -241,49 +252,49 @@ impl Chunk {
             });
         }
         loop {
-            if t_max.x <= t_max.y {
-                if t_max.x <= t_max.z {
-                    if t_max.x >= delta_max.x || t_max.x >= max_distance {
+            if i_tmax.x <= i_tmax.y {
+                if i_tmax.x <= i_tmax.z {
+                    if i_tmax.x >= idelta_max.x || i_tmax.x >= i_max_dist {
                         return None;
                     }
                     cell.x += step.x;
                     let coord = (cell.x as u32, cell.y as u32, cell.z as u32);
                     if self.get(coord.0, coord.1, coord.2) {
-                        return Some(RayHit::hit_face(face.0, cell, t_max.x));
+                        return Some(RayHit::hit_face(face.0, cell, unscale(i_tmax.x)));
                     }
-                    t_max.x += delta.x;
+                    i_tmax.x += idelta.x;
                 } else {
-                    if t_max.z >= delta_max.z || t_max.z >= max_distance {
+                    if i_tmax.z >= idelta_max.z || i_tmax.z >= i_max_dist {
                         return None;
                     }
                     cell.z += step.z;
                     let coord = (cell.x as u32, cell.y as u32, cell.z as u32);
                     if self.get(coord.0, coord.1, coord.2) {
-                        return Some(RayHit::hit_face(face.2, cell, t_max.z));
+                        return Some(RayHit::hit_face(face.2, cell, unscale(i_tmax.z)));
                     }
-                    t_max.z += delta.z;
+                    i_tmax.z += idelta.z;
                 }
             } else {
-                if t_max.y <= t_max.z {
-                    if t_max.y >= delta_max.y || t_max.y >= max_distance {
+                if i_tmax.y <= i_tmax.z {
+                    if i_tmax.y >= idelta_max.y || i_tmax.y >= i_max_dist {
                         return None;
                     }
                     cell.y += step.y;
                     let coord = (cell.x as u32, cell.y as u32, cell.z as u32);
                     if self.get(coord.0, coord.1, coord.2) {
-                        return Some(RayHit::hit_face(face.1, cell, t_max.y));
+                        return Some(RayHit::hit_face(face.1, cell, unscale(i_tmax.y)));
                     }
-                    t_max.y += delta.y;
+                    i_tmax.y += idelta.y;
                 } else {
-                    if t_max.z >= delta_max.z || t_max.z >= max_distance {
+                    if i_tmax.z >= idelta_max.z || i_tmax.z >= i_max_dist {
                         return None;
                     }
                     cell.z += step.z;
                     let coord = (cell.x as u32, cell.y as u32, cell.z as u32);
                     if self.get(coord.0, coord.1, coord.2) {
-                        return Some(RayHit::hit_face(face.2, cell, t_max.z));
+                        return Some(RayHit::hit_face(face.2, cell, unscale(i_tmax.z)));
                     }
-                    t_max.z += delta.z;
+                    i_tmax.z += idelta.z;
                 }
             }
         }
