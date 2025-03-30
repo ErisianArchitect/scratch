@@ -48,7 +48,7 @@ fn grad(hash: usize, x: f32, y: f32) -> f32 {
     (if (h & 1) == 0 { u } else { -u }) + (if (h & 2) == 0 { v } else { -v })
 }
 
-fn perlin(permutation: &Permutation, x: f32, y: f32) -> f32 {
+pub fn perlin(permutation: &Permutation, x: f32, y: f32) -> f32 {
     let x0 = x.floor() as usize & 255;
     let y0 = y.floor() as usize & 255;
     let x1 = x0 + 1;

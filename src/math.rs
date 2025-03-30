@@ -2,6 +2,8 @@ use core::f32;
 
 use glam::*;
 
+use crate::ray::Ray3;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Axis {
     X,
@@ -17,6 +19,16 @@ pub enum Face {
     NegX,
     NegY,
     NegZ,
+}
+
+impl Face {
+    pub fn axis(self) -> Axis {
+        match self {
+            Face::PosX | Face::NegX => Axis::X,
+            Face::PosY | Face::NegY => Axis::Y,
+            Face::PosZ | Face::NegZ => Axis::Z,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -119,9 +131,8 @@ pub fn next_face(point: Vec3, direction: Vec3, cell_size: Vec3, cell_offset: Vec
 //     }
 // }
 
-pub fn raycast<F: FnMut(&IVec3, f32) -> bool>(
-    ray_origin: Vec3,
-    ray_direction: Vec3,
+pub fn raycast<F: FnMut(&IVec3, Face, f32) -> bool>(
+    ray: Ray3,
     cell_size: Vec3,
     cell_offset: Vec3,
     mut callback: F,
@@ -130,15 +141,32 @@ pub fn raycast<F: FnMut(&IVec3, f32) -> bool>(
         cell_size / magnitude.abs().max(<f32>::MIN_POSITIVE)
     }
     let delta = vec3(
-        calc_step(cell_size.x, ray_direction.x),
-        calc_step(cell_size.y, ray_direction.y),
-        calc_step(cell_size.z, ray_direction.z),
+        calc_step(cell_size.x, ray.dir.x),
+        calc_step(cell_size.y, ray.dir.y),
+        calc_step(cell_size.z, ray.dir.z),
     );
 
-    let sign = ray_direction.signum();
+    let sign = ray.dir.signum();
     let step = sign.as_ivec3();
+    let face = (
+        if step.x >= 0 {
+            Face::NegX
+        } else {
+            Face::PosX
+        },
+        if step.y >= 0 {
+            Face::NegY
+        } else {
+            Face::PosY
+        },
+        if step.z >= 0 {
+            Face::NegZ
+        } else {
+            Face::PosZ
+        },
+    );
 
-    let origin = ray_origin - cell_offset;
+    let origin = ray.pos - cell_offset;
     let inner = origin.rem_euclid(cell_size);
 
     fn calc_t_max(step: i32, cell_size: f32, p: f32, magnitude: f32) -> f32 {
@@ -151,24 +179,24 @@ pub fn raycast<F: FnMut(&IVec3, f32) -> bool>(
         }
     }
     let mut t_max = vec3(
-        calc_t_max(step.x, cell_size.x, inner.x, ray_direction.x),
-        calc_t_max(step.y, cell_size.y, inner.y, ray_direction.y),
-        calc_t_max(step.z, cell_size.z, inner.z, ray_direction.z),
+        calc_t_max(step.x, cell_size.x, inner.x, ray.dir.x),
+        calc_t_max(step.y, cell_size.y, inner.y, ray.dir.y),
+        calc_t_max(step.z, cell_size.z, inner.z, ray.dir.z),
     );
  
     let mut cell = (origin / cell_size).floor().as_ivec3();
-    callback(&cell, 0.0);
+    callback(&cell, Face::PosY, 0.0);
     loop {
         if t_max.x <= t_max.y {
             if t_max.x <= t_max.z {
                 cell.x += step.x;
-                if callback(&cell, t_max.x) {
+                if callback(&cell, face.0, t_max.x) {
                     return;
                 }
                 t_max.x += delta.x;
             } else {
                 cell.z += step.z;
-                if callback(&cell, t_max.z) {
+                if callback(&cell, face.2, t_max.z) {
                     return;
                 }
                 t_max.z += delta.z;
@@ -176,19 +204,78 @@ pub fn raycast<F: FnMut(&IVec3, f32) -> bool>(
         } else {
             if t_max.y <= t_max.z {
                 cell.y += step.y;
-                if callback(&cell, t_max.y) {
+                if callback(&cell, face.1, t_max.y) {
                     return;
                 }
                 t_max.y += delta.y;
             } else {
                 cell.z += step.z;
-                if callback(&cell, t_max.z) {
+                if callback(&cell, face.2, t_max.z) {
                     return;
                 }
                 t_max.z += delta.z;
             }
         }
     }
+}
+
+// fn part1by1(n: u32) -> u32 {
+//     var n = n & 0x0000ffff;
+//     n = (n | (n << 8)) & 0x00ff00ff;
+//     n = (n | (n << 4)) & 0x0f0f0f0f;
+//     n = (n | (n << 2)) & 0x33333333;
+//     n = (n | (n << 1)) & 0x55555555;
+//     return n;
+// }
+
+// fn morton_encode(x: u32, y: u32) -> u32 {
+//     return (part1by1(y) << 1) | part1by1(x);
+// }
+
+fn chunk_index_flat(x: usize, y: usize, z: usize) -> usize {
+    x | (y << 4) | (z << 8)
+}
+
+// Morton index for 2048x2048
+
+// fn chunk_index_morton(x: usize, y: usize, z: usize) -> usize {
+//     #[inline(always)]
+//     fn shutter(n: usize) -> usize {
+//         //       0b1111
+//         //       0b1010101
+//         //       0b001001001001
+//         let step1 = (n | (n << 4)) &    0b000011000011000011000011000011000011;
+//         return (step1 | (step1 << 2)) & 0b001001001001001001001001001001001001;
+//     }
+//     shutter(x) | (shutter(y) << 1) | (shutter(z) << 2)
+// }
+
+// fn morton2_2048(x: u32, y: u32) -> u32 {
+//     #[inline(always)]
+//     fn shutter(n: u32) -> u32 {
+//         // 0b    11  111  111  111
+//         // 0b101010101010101010101
+//         let step1 = (n | (n << 10)) & 0b0000000000011111111111;
+//     }
+// }
+
+fn chunk_index_morton(x: usize, y: usize, z: usize) -> usize {
+    #[inline(always)]
+    fn shutter(n: usize) -> usize {
+        // 0b1111100000000000111111
+        // 0b1100000011100000000000111000111
+        // 0b1100000011100000000000111000000111
+        let step1 = (n | (n << 11)) & 0b1111100000000000111111;
+        let step2 = (n | (n << 6)) & 0b1100000011100000000000111000000111;
+        (step1 | (step1 << 3)) & 0b001001001001001001001001001001001001001001001001001001001001001
+    }
+    shutter(x) | (shutter(y) << 1) | (shutter(z) << 2)
+}
+
+#[test]
+fn morton_test() {
+    let morton = chunk_index_morton(8, 31, 31);
+    println!("Morton: {morton}");
 }
 
 #[test]
@@ -214,12 +301,12 @@ fn raycast_test() {
     let cell_offset = Vec3::ZERO;
     // let mut counter = 0usize;
     let start = std::time::Instant::now();
-    raycast(point, direction, cell_size, cell_offset, |p, d| {
-        println!("{p:?}, {d}");
-        let loc = point + direction * d;
-        println!("Location: {loc:?}");
-        d < 100.0
-    });
+    // raycast(Ray3::new(point, direction), cell_size, cell_offset, |p, d| {
+    //     println!("{p:?}, {d}");
+    //     let loc = point + direction * d;
+    //     println!("Location: {loc:?}");
+    //     d < 100.0
+    // });
     // for _ in 0..256 {
     //     for _ in 0..256 {
     //         raycast(point, direction, cell_size, cell_offset, 10, |_, _, _| {

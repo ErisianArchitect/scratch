@@ -7,3 +7,5 @@ pub mod shared;
 pub mod diff_plot;
 pub mod math;
 pub mod chunk;
+pub mod camera;
+pub mod ray;

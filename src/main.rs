@@ -4,7 +4,7 @@ use std::{borrow::Borrow, collections::{HashMap, VecDeque}, sync::{Arc, Mutex}, 
 use image::{Rgb, RgbImage, Rgba, RgbaImage};
 use itertools::Itertools;
 use rand::{rngs::StdRng, Rng, SeedableRng};
-use scratch::{dag::*, diff_plot::DiffPlot, perlin::make_seed};
+use scratch::{chunk::Chunk, dag::*, diff_plot::DiffPlot, open_simplex::open_simplex_2d, perlin::{make_seed, Permutation}, ray::Ray3};
 use sha2::digest::typenum::Diff;
 
 macro_rules! count_ids {
@@ -162,8 +162,136 @@ fn hor_line<F: FnMut(i32, i32)>(x_range: std::ops::Range<i32>, y: i32, mut f: F)
 fn main() {
     use glam::*;
     use scratch::math::*;
+    use scratch::camera::*;
+    use scratch::perlin::perlin;
+    let perm = Permutation::from_seed(make_seed(1243));
+    let img_size = (1920*2, 1080*2);
+    // let img_size = (256, 256);
+    let mut cam = Camera::from_look_at(vec3(-48.0, 64.0, -64.0), vec3(32., 8., 32.), 45.0, 1.0, 100.0, img_size);
+
+    let mut last = IVec3::ZERO;
+    let mut chunk = Chunk::new();
+    let line_width = 8;
+    fn checkerboard(x: u32, y: u32, z: u32) -> bool {
+        ((x & 1) ^ (y & 1) ^ (z & 1)) != 0
+    }
+
+    // for x in 0..64 {
+    //     for z in 0..64 {
+    //         for y in 0..64 {
+    //             chunk.set(x, y, z, checkerboard(x, y, z));
+    //         }
+    //     }
+    // }
+
+    for x in 0..64 {
+        for z in 0..64 {
+            let min_dist = x.min(z).min(63-x).min(63-z);
+            let falloff = (min_dist as f32) / 32.0;
+            let height = (perlin(&perm, x as f32 / 64.0, z as f32 / 64.0) * 0.5) + 0.5;
+            let h = ((height * 64.0 * falloff) as u32).max(1);
+            chunk.fill_box((x, 0, z), (x+1, h, z+1), true);
+        }
+    }
+
+    // chunk.fill_box((16, 16, 16), (48, 48, 48), true);
+    // chunk.fill_box((16, 16 + line_width, 16 + line_width), (48, 48 - line_width, 48 - line_width), false);
+    // chunk.fill_box((16 + line_width, 16, 16 + line_width), (48 - line_width, 48, 48 - line_width), false);
+    // chunk.fill_box((16 + line_width, 16 + line_width, 16), (48 - line_width, 48 - line_width, 48), false);
+
+    for x in 0..64 {
+        for z in 0..64 {
+            for y in 0..64 {
+                let b = chunk.get(x, y, z);
+                let cb1 = checkerboard(x, y, z);
+                let cb2 = checkerboard(x/2, y/2, z/2) || true;
+                let cb3 = checkerboard(x/4, y/4, z/4) || true;
+                chunk.set(x, y, z, b && cb1 && cb2 && cb3);
+            }
+        }
+    }
+
+
+    // let mut plot = DiffPlot::new(1024, 1024);
+    
+    let mut img = RgbImage::new(img_size.0, img_size.1);
+
+    let near = 0.1;
+    let far = 500.0;
+    let depth_mul = 1.0 / (far - near);
+    let start = std::time::Instant::now();
+    for y in 0..img_size.1 {
+        for x in 0..img_size.0 {
+    // for y in 2048..2049 {
+    //     for x in 2048..2049 {
+            let screen_pos = vec2(x as f32 / img_size.0 as f32 - 0.5, y as f32 / img_size.1 as f32 - 0.5);
+            let ray = cam.normalized_screen_to_ray(screen_pos);
+            {
+                let last = &mut last;
+                let img = &mut img;
+                let chunk = &chunk;
+                let mut steps = 0;
+                let max_dist = far;
+                if let Some(hit) = chunk.raycast(ray, max_dist) {
+                    if hit.distance >= near && hit.distance < far {
+                        let dnorm = (hit.distance - near) * depth_mul;
+                        let pix = (dnorm * 255.0) as u8;
+                        let rgb = match hit.face.map(|face| face.axis()) {
+                            Some(Axis::X) => Rgb([pix, 0, 0]),
+                            Some(Axis::Y) => Rgb([0, pix, 0]),
+                            Some(Axis::Z) => Rgb([0, 0, pix]),
+                            _ => Rgb([255, 255, 255]),
+                        };
+                        img.put_pixel(x, y, rgb);
+                    }
+                }
+                // raycast(ray, Vec3::ONE, Vec3::ONE, move |p, f, d| {
+                //     // steps += 1;
+                //     // last.clone_from(&p);
+                //     if p.x < 0 || p.y < 0 || p.z < 0
+                //     || p.x >= 64 || p.y >= 64 || p.z >= 64 {
+                //         return d > max_dist;
+                //     }
+                //     if chunk.get(p.x as u32, p.y as u32, p.z as u32) {
+                //         // img.set(x, y, true);
+                //         if d >= near && d < far {
+                //             let dnorm = (d - near) * depth_mul;
+                //             let pix = (dnorm * 255.0) as u8;
+                //             let rgb = match f.axis() {
+                //                 Axis::X => Rgb([pix, 0, 0]),
+                //                 Axis::Y => Rgb([0, pix, 0]),
+                //                 Axis::Z => Rgb([0, 0, pix]),
+                //             };
+                //             img.put_pixel(x, y, rgb);
+                //             return true;
+                //         }
+                //         return true;
+                //     }
+                //     d > max_dist
+                // });
+            }
+        }
+    }
+    let elapsed = start.elapsed();
+    println!("Completed in {elapsed:?}");
+
+    // for y in 0..1024 {
+    //     for x in 0..1024 {
+    //         if plot.get(x, y) {
+    //             img.put_pixel(x, y, Rgb([255, 255, 255]));
+    //         } else {
+    //             img.put_pixel(x, y, Rgb([0, 0, 0]));
+    //         }
+    //     }
+    // }
+
+    img.save("raycast.png").expect("Failed to save image.");
+
+    println!("Last hit point: {}", last);
+
+    return;
     let point = vec3(0.5, 0.5, 0.5);
-    let direction = vec3(1.0, 2.0, 0.0).normalize();
+    let direction = vec3(14.0, 2.0, 1.0).normalize();
     let cell_size = Vec3::ONE;
     let cell_offset = Vec3::ZERO;
     let mut counter = 0usize;
@@ -171,14 +299,14 @@ fn main() {
     let start = std::time::Instant::now();
     let mut last = IVec3::ZERO;
     let mut last_d = 0.0;
-    for _ in 0..(10000) {
+    for _ in 0..(16*16) {
         counter = 0;
         {
             let counter = &mut counter;
             let last = &mut last;
             let last_d = &mut last_d;
             #[no_mangle]
-            raycast(point, direction, cell_size, cell_offset, move |p, d| {
+            raycast(Ray3::new(point, direction), cell_size, cell_offset, move |p, f, d| {
                 last.clone_from(p);
                 *last_d = d;
                 *counter += 1;
