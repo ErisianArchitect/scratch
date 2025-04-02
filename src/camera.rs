@@ -1,5 +1,5 @@
 use glam::{
-    vec2, Mat4, Quat, Vec2, Vec3, Vec4, Vec4Swizzles
+    vec2, Mat3, Mat4, Quat, Vec2, Vec3, Vec4, Vec4Swizzles
 };
 
 use crate::ray::Ray3;
@@ -240,6 +240,10 @@ impl Camera {
         Mat4::look_to_rh(self.position, dir, up)
     }
 
+    pub fn rotation_matrix(&self) -> Mat3 {
+        Mat3::from_euler(glam::EulerRot::YXZ, self.rotation.y, self.rotation.x, 0.0)
+    }
+
     pub fn projection_matrix(&self) -> Mat4 {
         Mat4::perspective_rh(self.fov, self.aspect_ratio, self.z_near, self.z_far)
     }
@@ -269,6 +273,7 @@ impl Camera {
 
         let direction = (near_point - far_point).normalize();
 
+        // Ray3::new(near_point.xyz(), direction)
         Ray3::new(self.position, direction)
     }
 }

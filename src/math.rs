@@ -29,6 +29,17 @@ impl Face {
             Face::PosZ | Face::NegZ => Axis::Z,
         }
     }
+
+    pub fn normal(self) -> Vec3 {
+        match self {
+            Face::PosX => Vec3::X,
+            Face::PosY => Vec3::Y,
+            Face::PosZ => Vec3::Z,
+            Face::NegX => Vec3::NEG_X,
+            Face::NegY => Vec3::NEG_Y,
+            Face::NegZ => Vec3::NEG_Z,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -232,9 +243,9 @@ pub fn raycast<F: FnMut(&IVec3, Face, f32) -> bool>(
 //     return (part1by1(y) << 1) | part1by1(x);
 // }
 
-fn chunk_index_flat(x: usize, y: usize, z: usize) -> usize {
-    x | (y << 4) | (z << 8)
-}
+// fn chunk_index_flat(x: usize, y: usize, z: usize) -> usize {
+//     x | (y << 4) | (z << 8)
+// }
 
 // Morton index for 2048x2048
 
@@ -259,24 +270,24 @@ fn chunk_index_flat(x: usize, y: usize, z: usize) -> usize {
 //     }
 // }
 
-fn chunk_index_morton(x: usize, y: usize, z: usize) -> usize {
-    #[inline(always)]
-    fn shutter(n: usize) -> usize {
-        // 0b1111100000000000111111
-        // 0b1100000011100000000000111000111
-        // 0b1100000011100000000000111000000111
-        let step1 = (n | (n << 11)) & 0b1111100000000000111111;
-        let step2 = (n | (n << 6)) & 0b1100000011100000000000111000000111;
-        (step1 | (step1 << 3)) & 0b001001001001001001001001001001001001001001001001001001001001001
-    }
-    shutter(x) | (shutter(y) << 1) | (shutter(z) << 2)
-}
+// fn chunk_index_morton(x: usize, y: usize, z: usize) -> usize {
+//     #[inline(always)]
+//     fn shutter(n: usize) -> usize {
+//         // 0b1111100000000000111111
+//         // 0b1100000011100000000000111000111
+//         // 0b1100000011100000000000111000000111
+//         let step1 = (n | (n << 11)) & 0b1111100000000000111111;
+//         let step2 = (n | (n << 6)) & 0b1100000011100000000000111000000111;
+//         (step1 | (step1 << 3)) & 0b001001001001001001001001001001001001001001001001001001001001001
+//     }
+//     shutter(x) | (shutter(y) << 1) | (shutter(z) << 2)
+// }
 
-#[test]
-fn morton_test() {
-    let morton = chunk_index_morton(8, 31, 31);
-    println!("Morton: {morton}");
-}
+// #[test]
+// fn morton_test() {
+//     let morton = chunk_index_morton(8, 31, 31);
+//     println!("Morton: {morton}");
+// }
 
 #[test]
 fn to_i32_test() {
@@ -293,29 +304,29 @@ fn scrunch_test() {
     println!("{}", s * size);
 }
 
-#[test]
-fn raycast_test() {
-    let point = vec3(0.5, 0.5, 0.5);
-    let direction = vec3(1.0, 0.0, 0.0).normalize();
-    let cell_size = Vec3::ONE;
-    let cell_offset = Vec3::ZERO;
-    // let mut counter = 0usize;
-    let start = std::time::Instant::now();
-    // raycast(Ray3::new(point, direction), cell_size, cell_offset, |p, d| {
-    //     println!("{p:?}, {d}");
-    //     let loc = point + direction * d;
-    //     println!("Location: {loc:?}");
-    //     d < 100.0
-    // });
-    // for _ in 0..256 {
-    //     for _ in 0..256 {
-    //         raycast(point, direction, cell_size, cell_offset, 10, |_, _, _| {
-    //             // println!("{p} {i}");
-    //             counter += 1;
-    //             true
-    //         });
-    //     }
-    // }
-    println!("Elapsed: {:?}", start.elapsed());
-    // println!("Counter: {counter}");
-}
+// #[test]
+// fn raycast_test() {
+//     let point = vec3(0.5, 0.5, 0.5);
+//     let direction = vec3(1.0, 0.0, 0.0).normalize();
+//     let cell_size = Vec3::ONE;
+//     let cell_offset = Vec3::ZERO;
+//     // let mut counter = 0usize;
+//     let start = std::time::Instant::now();
+//     // raycast(Ray3::new(point, direction), cell_size, cell_offset, |p, d| {
+//     //     println!("{p:?}, {d}");
+//     //     let loc = point + direction * d;
+//     //     println!("Location: {loc:?}");
+//     //     d < 100.0
+//     // });
+//     // for _ in 0..256 {
+//     //     for _ in 0..256 {
+//     //         raycast(point, direction, cell_size, cell_offset, 10, |_, _, _| {
+//     //             // println!("{p} {i}");
+//     //             counter += 1;
+//     //             true
+//     //         });
+//     //     }
+//     // }
+//     println!("Elapsed: {:?}", start.elapsed());
+//     // println!("Counter: {counter}");
+// }

@@ -1,5 +1,3 @@
-use std::f32::MIN_POSITIVE;
-
 use crate::{math::Face, ray::Ray3};
 use glam::*;
 
@@ -16,12 +14,13 @@ impl Chunk {
         }
     }
 
-    pub fn col_index(x: u32, z: u32) -> u32 {
-        x | (z << 6)
+    pub fn col_index(x: i32, z: i32) -> i32 {
+        (x & 0b111111) | ((z & 0b111111) << 6)
     }
 
-    pub fn get(&self, x: u32, y: u32, z: u32) -> bool {
-        if (x | y | z) >= 64 {
+    pub fn get(&self, x: i32, y: i32, z: i32) -> bool {
+        let xyz = x | y | z;
+        if xyz >= 64 || xyz < 0 {
             return false;
         }
         let index = Self::col_index(x, z);
@@ -29,7 +28,11 @@ impl Chunk {
         (col & (1 << y)) != 0
     }
 
-    pub fn set(&mut self, x: u32, y: u32, z: u32, on: bool) {
+    pub fn set(&mut self, x: i32, y: i32, z: i32, on: bool) {
+        let xyz = x | y | z;
+        if xyz >= 64 || xyz < 0 {
+            return;
+        }
         let index = Self::col_index(x, z);
         let mut col = self.cols[index as usize];
         if on {
@@ -40,136 +43,185 @@ impl Chunk {
         self.cols[index as usize] = col;
     }
 
-    pub fn fill_box(&mut self, start: (u32, u32, u32), end: (u32, u32, u32), on: bool) {
-        let mask = (1u64 << end.1) - 1;
-        let mask = mask & !((1 << start.1) - 1);
-        if on {
+    pub fn fill_box(&mut self, start: (i32, i32, i32), end: (i32, i32, i32), on: bool) {
+        let end = (end.0.clamp(0, 64), end.1.clamp(0, 64), end.2.clamp(0, 64));
+        let start = (
+            start.0.clamp(0, end.0),
+            start.1.clamp(0, end.1),
+            start.2.clamp(0, end.2),
+        );
+        for x in start.0..end.0 {
             for z in start.2..end.2 {
-                for x in start.0..end.0 {
-                    let index = Self::col_index(x, z);
-                    let col = self.cols[index as usize];
-                    self.cols[index as usize] = col | mask;
+                for y in start.1..end.1 {
+                    self.set(x, y, z, on);
                 }
             }
-        } else {
-            let mask = !mask;
-            for z in start.2..end.2 {
-                for x in start.0..end.0 {
-                    let index = Self::col_index(x, z);
-                    let col = self.cols[index as usize];
-                    self.cols[index as usize] = col & mask;
-                }
-            }
-
         }
+    }
+
+    pub fn set_with<F: Fn(bool) -> bool>(&mut self, x: i32, y: i32, z: i32, f: F) {
+        let cur = self.get(x, y, z);
+        let new = f(cur);
+        self.set(x, y, z, new);
+    }
+
+    pub fn draw_box_with<F: Fn(bool) -> bool>(&mut self, start: (i32, i32, i32), end: (i32, i32, i32), f: F) {
+        for y in start.1..end.1 {
+            self.set_with(start.0, y, start.2, |b| f(b));
+            self.set_with(end.0 - 1, y, start.2, |b| f(b));
+            self.set_with(start.0, y, end.2 - 1, |b| f(b));
+            self.set_with(end.0 - 1, y, end.2 - 1, |b| f(b));
+        }
+        for z in start.2+1..end.2-1 {
+            self.set_with(start.0, start.1, z, |b| f(b));
+            self.set_with(end.0-1, start.1, z, |b| f(b));
+            self.set_with(start.0, end.1-1, z, |b| f(b));
+            self.set_with(end.0-1, end.1-1, z, |b| f(b));
+        }
+        for x in start.0+1..end.0-1 {
+            self.set_with(x, start.1, start.2, |b| f(b));
+            self.set_with(x, end.1-1, start.2, |b| f(b));
+            self.set_with(x, start.1, end.2-1, |b| f(b));
+            self.set_with(x, end.1-1, end.2-1, |b| f(b));
+        }
+    }
+
+    pub fn draw_box(&mut self, start: (i32, i32, i32), end: (i32, i32, i32), on: bool) {
+        self.draw_box_with(start, end, |_| on);
     }
 
     pub fn raycast(&self, ray: Ray3, max_distance: f32) -> Option<RayHit> {
         let mut ray = ray;
-        let (step, delta_max, delta_add) = if ray.pos.x < 0.0 || ray.pos.y < 0.0 || ray.pos.z < 0.0
+        let (step, delta_min, delta_max, delta_add) = if ray.pos.x < 0.0 || ray.pos.y < 0.0 || ray.pos.z < 0.0
         || ray.pos.x >= 64.0 || ray.pos.y >= 64.0 || ray.pos.z >= 64.0 {
-            // Calculate entry point or early return.
-            if (ray.pos.x < 0.0 && ray.dir.x <= 0.0)
-            || (ray.pos.x >= 64.0 && ray.dir.x >= 0.0)
-            || (ray.pos.y < 0.0 && ray.dir.y <= 0.0)
-            || (ray.pos.y >= 64.0 && ray.dir.y >= 0.0)
-            || (ray.pos.z < 0.0 && ray.dir.z <= 0.0)
-            || (ray.pos.z >= 64.0 && ray.dir.z >= 0.0) {
-                return None;
-            }
+            // Calculate entry point (if there is one).
             // calculate distance to cross each plane
             let sign = ray.dir.signum();
             let step = sign.as_ivec3();
-            let (dx_min, dx_max) = if step.x > 0 {
-                (
-                    -ray.pos.x / ray.dir.x,
-                    (64.0 - ray.pos.x) / ray.dir.x,
-                )
-            } else if step.x < 0 {
-                (
-                    (ray.pos.x - 64.0) / -ray.dir.x,
-                    ray.pos.x / -ray.dir.x,
-                )
-            } else {
-                (<f32>::NEG_INFINITY, <f32>::INFINITY)
+            if step.x < 0 && ray.pos.x < 0.0
+            || step.x > 0 && ray.pos.x >= 64.0
+            || step.y < 0 && ray.pos.y < 0.0
+            || step.y > 0 && ray.pos.y >= 64.0
+            || step.z < 0 && ray.pos.z < 0.0
+            || step.z > 0 && ray.pos.z > 64.0 {
+                return None;
+            }
+            let (dx_min, dx_max) = match step.x + 1 {
+                0 => {
+                    (
+                        (ray.pos.x - 64.0) / -ray.dir.x,
+                        ray.pos.x / -ray.dir.x,
+                    )
+                }
+                1 => {
+                    (<f32>::NEG_INFINITY, <f32>::INFINITY)
+                }
+                2 => {
+                    (
+                        -ray.pos.x / ray.dir.x,
+                        (64.0 - ray.pos.x) / ray.dir.x,
+                    )
+                }
+                _ => unreachable!(),
             };
-            let (dy_min, dy_max) = if step.y > 0 {
-                (
-                    -ray.pos.y / ray.dir.y,
-                    (64.0 - ray.pos.y) / ray.dir.y,
-                )
-            } else if step.y < 0 {
-                (
-                    (ray.pos.y - 64.0) / -ray.dir.y,
-                    ray.pos.y / -ray.dir.y,
-                )
-            } else {
-                (<f32>::NEG_INFINITY, <f32>::INFINITY)
+            let (dy_min, dy_max) = match step.y + 1 {
+                0 => {
+                    (
+                        (ray.pos.y - 64.0) / -ray.dir.y,
+                        ray.pos.y / -ray.dir.y,
+                    )
+                }
+                1 => {
+                    (<f32>::NEG_INFINITY, <f32>::INFINITY)
+                }
+                2 => {
+                    (
+                        -ray.pos.y / ray.dir.y,
+                        (64.0 - ray.pos.y) / ray.dir.y,
+                    )
+                }
+                _ => unreachable!()
             };
-            let (dz_min, dz_max) = if step.z > 0 {
-                (
-                    -ray.pos.z / ray.dir.z,
-                    (64.0 - ray.pos.z) / ray.dir.z,
-                )
-            } else if step.z < 0 {
-                (
-                    (ray.pos.z - 64.0) / -ray.dir.z,
-                    ray.pos.z / -ray.dir.z,
-                )
-            } else {
-                (<f32>::NEG_INFINITY, <f32>::INFINITY)
+            let (dz_min, dz_max) = match step.z + 1 {
+                0 => {
+                    (
+                        (ray.pos.z - 64.0) / -ray.dir.z,
+                        ray.pos.z / -ray.dir.z,
+                    )
+                }
+                1 => {
+                    (<f32>::NEG_INFINITY, <f32>::INFINITY)
+                }
+                2 => {
+                    (
+                        -ray.pos.z / ray.dir.z,
+                        (64.0 - ray.pos.z) / ray.dir.z,
+                    )
+                }
+                _ => unreachable!()
             };
-
             let max_min = dx_min.max(dy_min.max(dz_min));
             let min_max = dx_max.min(dy_max.min(dz_max));
+            // Early return, the ray does not hit the volume.
             if max_min >= min_max {
                 return None;
             }
-            // let pos = ray.pos;
-            ray.pos = ray.pos + ray.dir * (max_min + 1e-3);
-            // println!(
-            //     "{:?} {:?} {:?} ({}, {}, {})",
-            //     pos,
-            //     ray.dir,
-            //     (ray.pos.x.floor(), ray.pos.y.floor(), ray.pos.z.floor()),
-            //     dx_min, dy_min, dz_min,
-            // );
-            // return None;
+            ray.pos = ray.pos + ray.dir * (max_min + 1e-5);
             (
                 step,
+                Some(vec3(dx_min, dy_min, dz_min)),
                 vec3(dx_max, dy_max, dz_max),
-                max_min,
+                max_min - 1e-5,
             )
         } else {
             let sign = ray.dir.signum();
             let step = sign.as_ivec3();
-            let dx_max = if step.x > 0 {
-                (64.0 - ray.pos.x) / ray.dir.x
-            } else if step.x < 0 {
-                ray.pos.x / -ray.dir.x
-            } else {
-                <f32>::INFINITY
+            let dx_max = match step.x + 1 {
+                0 => {
+                    ray.pos.x / -ray.dir.x
+                }
+                1 => {
+                    <f32>::INFINITY
+                }
+                2 => {
+                    (64.0 - ray.pos.x) / ray.dir.x
+                }
+                _ => unreachable!()
             };
-            let dy_max = if step.y > 0 {
-                (64.0 - ray.pos.y) / ray.dir.y
-            } else if step.y < 0 {
-                ray.pos.y / -ray.dir.y
-            } else {
-                <f32>::INFINITY
+            let dy_max = match step.y + 1 {
+                0 => {
+                    ray.pos.y / -ray.dir.y
+                }
+                1 => {
+                    <f32>::INFINITY
+                }
+                2 => {
+                    (64.0 - ray.pos.y) / ray.dir.y
+                }
+                _ => unreachable!()
             };
-            let dz_max = if step.z > 0 {
-                (64.0 - ray.pos.z) / ray.dir.z
-            } else if step.z < 0 {
-                ray.pos.z / -ray.dir.z
-            } else {
-                <f32>::INFINITY
+            let dz_max = match step.z + 1{
+                0 => {
+                    ray.pos.z / -ray.dir.z
+                }
+                1 => {
+                    <f32>::INFINITY
+                }
+                2 => {
+                    (64.0 - ray.pos.z) / ray.dir.z
+                }
+                _ => unreachable!()
             };
             (
                 step,
+                None,
                 vec3(dx_max, dy_max, dz_max),
                 0.0,
             )
         };
+        if delta_add >= max_distance {
+            return None;
+        }
         fn calc_delta(mag: f32) -> f32 {
             1.0 / mag.abs().max(<f32>::MIN_POSITIVE)
         }
@@ -213,31 +265,32 @@ impl Chunk {
             calc_t_max(step.y, fract.y, ray.dir.y) + delta_add,
             calc_t_max(step.z, fract.z, ray.dir.z) + delta_add,
         );
-        const SCALE_FACTOR: f32 = 10000.0;
-        const UNSCALE_FACTOR: f32 = 1.0 / SCALE_FACTOR;
-        fn scale(value: f32) -> i32 {
-            (value * SCALE_FACTOR) as i32
-        }
-        fn unscale(value: i32) -> f32 {
-            (value as f32) * UNSCALE_FACTOR
-        }
-        let mut i_tmax = ivec3(
-            scale(t_max.x),
-            scale(t_max.y),
-            scale(t_max.z),
-        );
 
         let mut cell = ray.pos.floor().as_ivec3();
-        let coord = (
-            cell.x as u32,
-            cell.y as u32,
-            cell.z as u32,
-        );
-        if self.get(coord.0, coord.1, coord.2) {
+        // let coord = (
+        //     cell.x as u32,
+        //     cell.y as u32,
+        //     cell.z as u32,
+        // );
+        if self.get(cell.x, cell.y, cell.z) {
             return Some(RayHit {
-                face: None,
+                face: delta_min.map(|min| {
+                    if min.x >= min.y {
+                        if min.x >= min.z {
+                            face.0
+                        } else {
+                            face.2
+                        }
+                    } else {
+                        if min.y >= min.z {
+                            face.1
+                        } else {
+                            face.2
+                        }
+                    }
+                }),
                 coord: cell,
-                distance: 0.0,
+                distance: delta_add,
             });
         }
         loop {
@@ -247,8 +300,7 @@ impl Chunk {
                         return None;
                     }
                     cell.x += step.x;
-                    let coord = (cell.x as u32, cell.y as u32, cell.z as u32);
-                    if self.get(coord.0, coord.1, coord.2) {
+                    if self.get(cell.x, cell.y, cell.z) {
                         return Some(RayHit::hit_face(face.0, cell, t_max.x));
                     }
                     t_max.x += delta.x;
@@ -257,8 +309,7 @@ impl Chunk {
                         return None;
                     }
                     cell.z += step.z;
-                    let coord = (cell.x as u32, cell.y as u32, cell.z as u32);
-                    if self.get(coord.0, coord.1, coord.2) {
+                    if self.get(cell.x, cell.y, cell.z) {
                         return Some(RayHit::hit_face(face.2, cell, t_max.z));
                     }
                     t_max.z += delta.z;
@@ -269,8 +320,7 @@ impl Chunk {
                         return None;
                     }
                     cell.y += step.y;
-                    let coord = (cell.x as u32, cell.y as u32, cell.z as u32);
-                    if self.get(coord.0, coord.1, coord.2) {
+                    if self.get(cell.x, cell.y, cell.z) {
                         return Some(RayHit::hit_face(face.1, cell, t_max.y));
                     }
                     t_max.y += delta.y;
@@ -279,8 +329,7 @@ impl Chunk {
                         return None;
                     }
                     cell.z += step.z;
-                    let coord = (cell.x as u32, cell.y as u32, cell.z as u32);
-                    if self.get(coord.0, coord.1, coord.2) {
+                    if self.get(cell.x, cell.y, cell.z) {
                         return Some(RayHit::hit_face(face.2, cell, t_max.z));
                     }
                     t_max.z += delta.z;
@@ -318,4 +367,25 @@ impl RayHit {
 fn size_test() {
     println!("RayHit Size: {}", std::mem::size_of::<RayHit>());
     println!("Option<RayHit> Size: {}", std::mem::size_of::<Option<RayHit>>());
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::tracegrid::GridSize;
+
+    use super::*;
+    #[test]
+    fn next_pow2() {
+        let size = GridSize::new(1920/2, 1080/2);
+        let w = size.width.next_power_of_two() - size.width;
+        let h = size.height.next_power_of_two() - size.height;
+        if w <= h {
+            println!("Width: {}\nNext Pow2: {}\nDifference: {}", size.width, size.width.next_power_of_two(), w);
+        } else {
+            println!("Height: {}\nNext Pow2: {}\nDifference: {}", size.height, size.height.next_power_of_two(), h);
+        }
+        let a = 1512;
+        let b = 5125;
+        println!("{}", (a | b) < 0);
+    }
 }
