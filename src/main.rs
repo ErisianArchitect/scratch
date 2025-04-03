@@ -6,7 +6,7 @@ use image::{Rgb, RgbImage, Rgba, RgbaImage};
 use itertools::Itertools;
 use noise::{NoiseFn, OpenSimplex};
 use rand::{rngs::StdRng, Rng, SeedableRng};
-use scratch::{camera::Camera, chunk::{Chunk, RayHit}, dag::*, diff_plot::DiffPlot, open_simplex::open_simplex_2d, perlin::{make_seed, Permutation}, ray::Ray3, tracegrid::{GridSize, TraceGrid}};
+use scratch::{camera::Camera, chunk::{self, Chunk, RayHit}, dag::*, diff_plot::DiffPlot, math::Face, open_simplex::open_simplex_2d, perlin::{make_seed, Permutation}, ray::Ray3, tracegrid::{GridSize, TraceGrid}};
 use sha2::digest::typenum::Diff;
 
 macro_rules! count_ids {
@@ -433,7 +433,7 @@ impl RayCalc {
         let tan_fov_half = (fov_rad * 0.5).tan();
         let asp_fov = aspect_ratio * tan_fov_half;
         Self {
-            mult: vec2(asp_fov, -tan_fov_half),
+            mult: vec2(asp_fov, tan_fov_half),
         }
     }
 
@@ -484,27 +484,222 @@ struct PosColor {
     rsimp: OpenSimplex,
     gsimp: OpenSimplex,
     bsimp: OpenSimplex,
+    scale: f64,
 }
 
 impl PosColor {
-    pub fn get(&self, pos: Vec3) -> Vec3 {
-        let pos_arr = [pos.x as f64, pos.y as f64, pos.z as f64];
+    pub fn get_with_scale(&self, pos: Vec3, scale: f64) -> Vec3 {
+        let pos_arr = [pos.x as f64 * scale, pos.y as f64 * scale, pos.z as f64 * scale];
         let r: f64 = self.rsimp.get(pos_arr) * 0.5 + 0.5;
         let g: f64 = self.gsimp.get(pos_arr) * 0.5 + 0.5;
         let b: f64 = self.bsimp.get(pos_arr) * 0.5 + 0.5;
         vec3(r as f32, g as f32, b as f32)
     }
+
+    pub fn get(&self, pos: Vec3) -> Vec3 {
+        Vec3::ONE
+        // let pos_arr = [pos.x as f64 * self.scale, pos.y as f64 * self.scale, pos.z as f64 * self.scale];
+        // let r: f64 = self.rsimp.get(pos_arr) * 0.5 + 0.5;
+        // let g: f64 = self.gsimp.get(pos_arr) * 0.5 + 0.5;
+        // let b: f64 = self.bsimp.get(pos_arr) * 0.5 + 0.5;
+        // vec3(r as f32, g as f32, b as f32)
+    }
+
 }
 
 fn norm_u8(norm: f32) -> u8 {
     (norm * 255.0) as u8
 }
+
 fn rgb(r: f32, g: f32, b: f32) -> Rgb<u8> {
     Rgb([
         norm_u8(r),
         norm_u8(g),
         norm_u8(b),
     ])
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct DirectionalLight {
+    pub direction: Vec3,
+    pub color: Vec3,
+    pub intensity: f32,
+    pub pre_calc: Vec3,
+    pub inv_dir: Vec3,
+}
+
+impl DirectionalLight {
+    pub fn new(direction: Vec3, color: Vec3, intensity: f32) -> Self {
+        Self {
+            direction,
+            color,
+            intensity,
+            pre_calc: color * intensity,
+            inv_dir: -direction,
+        }
+    }
+    #[inline(always)]
+    pub fn apply(&self, color: Vec3, normal: Vec3) -> Vec3 {
+        let dot = self.inv_dir.dot(normal);
+        (color * self.pre_calc) * dot
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Shadow {
+    pub factor: f32,
+}
+
+impl Shadow {
+    #[inline(always)]
+    pub fn apply(self, color: Vec3) -> Vec3 {
+        color * self.factor
+    }
+}
+
+impl std::ops::Mul<Vec3> for Shadow {
+    type Output = Vec3;
+    #[inline(always)]
+    fn mul(self, rhs: Vec3) -> Self::Output {
+        self.apply(rhs)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct AmbientLight {
+    pub color: Vec3,
+    pub intensity: f32,
+}
+
+impl AmbientLight {
+    #[inline(always)]
+    pub fn apply(self, color: Vec3) -> Vec3 {
+        self.color * color
+    }
+}
+
+impl std::ops::Mul<Vec3> for AmbientLight {
+    type Output = Vec3;
+    #[inline(always)]
+    fn mul(self, rhs: Vec3) -> Self::Output {
+        self.apply(rhs)
+    }
+}
+
+pub struct Lighting {
+    directional: DirectionalLight,
+    ambient: AmbientLight,
+    shadow: Shadow,
+}
+
+impl Lighting {
+    #[inline(always)]
+    pub fn calculate(&self, color: Vec3, normal: Vec3, occluded: bool) -> Vec3 {
+        let ambient = self.ambient.color;
+        let directional = self.directional.inv_dir.dot(normal);
+        let directional_color = self.directional.pre_calc * directional;
+        let light = ((1.0 - directional) * self.ambient.intensity) * ambient + directional_color;
+        let color = color * light;
+        if occluded {
+            self.shadow * color
+        } else {
+            color
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct Reflection {
+    reflectivity: f32,
+}
+
+#[inline(always)]
+fn reflect(ray_dir: Vec3, normal: Vec3) -> Vec3 {
+    ray_dir - 2.0 * (ray_dir * normal) * normal
+}
+
+#[inline(always)]
+fn combine_reflection(reflectivity: f32, diffuse: Vec3, reflection: Vec3) -> Vec3 {
+    reflectivity * reflection + (1.0 - reflectivity) * diffuse
+}
+
+impl Reflection {
+    #[inline(always)]
+    pub fn calculate(
+        self,
+        surface_normal: Vec3,
+        view_dir: Vec3,
+    ) -> f32 {
+        let dot = (-view_dir).dot(surface_normal).max(0.0);
+        self.reflectivity + (1.0 - self.reflectivity) * (1.0 - dot).powf(5.0)
+    }
+}
+
+pub struct TraceData {
+    chunk: Chunk,
+    pos_color: PosColor,
+    lighting: Lighting,
+    sky_color: Vec3,
+    reflection: Reflection,
+    reflection_steps: u16,
+}
+
+impl TraceData {
+    pub fn calc_color_before_reflections(&self, hit_point: Vec3, hit_normal: Vec3) -> Vec3 {
+        let color = self.pos_color.get(hit_point);
+        let light_ray = Ray3::new(hit_point, self.lighting.directional.inv_dir);
+        let light_hit = self.chunk.raycast(light_ray, 100.0);
+        self.lighting.calculate(color, hit_normal, light_hit.is_some())
+    }
+
+    pub fn trace_reflections(&self, ray: Ray3, near: f32, far: f32, steps: u16) -> Option<Vec3> {
+        let Some(hit) = self.chunk.raycast(ray, far) else {
+            return Some(self.sky_color(ray.dir));
+        };
+        let Some(face) = hit.face else {
+            return Some(Vec3::X);
+        };
+        if hit.distance < near {
+            return Some(Vec3::Y);
+        }
+        let hit_point = hit.get_hit_point(ray, face);
+        let hit_normal = face.normal();
+        let mut diffuse = self.calc_color_before_reflections(hit_point, hit_normal);
+        fn on_edge(x: f32, y: f32) -> bool {
+            x < 0.05 || y < 0.05 || x >= 0.95 || y >= 0.95
+        }
+        // let hit_fract = hit_point.fract();
+        // match face {
+        //     Face::PosX | Face::NegX if on_edge(hit_fract.y, hit_fract.z) => diffuse = diffuse * 0.1,
+        //     Face::PosY | Face::NegY if on_edge(hit_fract.x, hit_fract.z) => diffuse = diffuse * 0.1,
+        //     Face::PosZ | Face::NegZ if on_edge(hit_fract.x, hit_fract.y) => diffuse = diffuse * 0.1,
+        //     _ => (),
+        // }
+        if steps == 1 {
+            return Some(diffuse);
+        }
+        let reflect_dir = reflect(ray.dir, hit_normal);
+        let reflect_ray = Ray3::new(hit_point, reflect_dir);
+        let reflectivity = self.reflection.calculate(hit_normal, ray.dir);
+        let Some(reflection) = self.trace_reflections(reflect_ray, 0.0, far - hit.distance, steps - 1) else {
+            // return Some(combine_reflection(reflectivity, diffuse, self.sky_color(reflect_dir)));
+            return Some(diffuse);
+        };
+        let final_color = combine_reflection(reflectivity, diffuse, reflection);
+        Some(final_color)
+    }
+
+    pub fn trace_color(&self, ray: Ray3, near: f32, far: f32) -> Vec3 {
+        if let Some(color) = self.trace_reflections(ray, near, far, self.reflection_steps) {
+            color
+        } else {
+            self.sky_color(ray.dir)
+        }
+    }
+
+    pub fn sky_color(&self, ray_dir: Vec3) -> Vec3 {
+        self.lighting.ambient.apply(self.pos_color.get(ray_dir) * self.sky_color)
+    }
 }
 
 pub fn raycast_scene() {
@@ -526,10 +721,13 @@ pub fn raycast_scene() {
         rsimp,
         gsimp,
         bsimp,
+        scale: 1.0,
     };
     let perm = Permutation::from_seed(make_seed(SEED as u64));
     // let size = GridSize::new(1280, 720);
+    // let size = GridSize::new(1920, 1080);
     let size = GridSize::new(1920*2, 1080*2);
+    // let size = GridSize::new(2048, 2048);
     let size = if SSAA {
         GridSize::new(size.width * 2, size.height * 2)
     } else {
@@ -537,10 +735,32 @@ pub fn raycast_scene() {
     };
     // let same = 1024*16;
     // let size = GridSize::new(same, same/2);
-    let mut cam = Camera::from_look_at(vec3(-24.0, 70.0-12.0, 48.0), vec3(32., 32.-12., 32.), 90.0f32.to_radians(), 1.0, 100.0, (size.width, size.height));
+    let mut cam = Camera::from_look_at(vec3(-24.0, 70.0-12.0, 48.0), vec3(32., 32.-12., 32.), 45.0f32.to_radians(), 1.0, 100.0, (size.width, size.height));
+    // let mut cam = Camera::from_look_at(vec3(24.0, 24.0, 16.0), vec3(32.0, 8.0, 32.0), 90.0f32.to_radians(), 1.0, 100.0, (size.width, size.height));
 
     let mut last = IVec3::ZERO;
     let mut chunk = Chunk::new();
+    let mut trace = TraceData {
+        chunk,
+        pos_color,
+        lighting: Lighting {
+            directional: DirectionalLight::new(
+                vec3(0.5, -1.0, -1.0).normalize(),
+                vec3(1.0, 1.0, 1.0),
+                0.5,
+            ),
+            ambient: AmbientLight {
+                color: vec3(1.0, 1.0, 1.0),
+                intensity: 0.2,
+            },
+            shadow: Shadow {
+                factor: 0.1,
+            },
+        },
+        sky_color: Vec3::splat(0.),
+        reflection: Reflection { reflectivity: 0.3 },
+        reflection_steps: 5,
+    };
     fn checkerboard(x: i32, y: i32, z: i32) -> bool {
         ((x & 1) ^ (y & 1) ^ (z & 1)) != 0
     }
@@ -552,7 +772,7 @@ pub fn raycast_scene() {
     // let cam_rot = cam.rotation;
     let rays = (0..size.width*size.height).into_par_iter().map(move |i| {
         let (x, y) = size.inv_index(i);
-        let xy = vec2(x as f32, y as f32);
+        let xy = vec2(x as f32, (size.height - y) as f32);
         let wh = vec2(size.width as f32, size.height as f32);
         let hs = vec2(0.5, 0.5);
         let screen_pos = (xy / wh) - hs;
@@ -580,14 +800,15 @@ pub fn raycast_scene() {
                 let min_dist = x.min(z).min(63-x).min(63-z);
                 let falloff = (min_dist as f32) / 32.0;
                 let height = (perlin(&perm, x as f32 / 64.0, z as f32 / 64.0) * 0.5) + 0.5;
-                let h = ((height * 64.0 * falloff) as i32).max(1);
-                chunk.fill_box((x, 0, z), (x+1, h, z+1), true);
+                let h = ((height * 64.0
+                     * falloff
+                    ) as i32).max(0);
+                trace.chunk.fill_box((x, 0, z), (x+1, h, z+1), true);
             }
         }
         let elapsed = start.elapsed();
         println!("Generated terrain in {elapsed:.3?}");
     });
-
     // for x in 0i32..64 {
     //     for y in 0i32..64 {
     //         for z in 0i32..64 {
@@ -643,8 +864,33 @@ pub fn raycast_scene() {
     fn boxes(start: (i32, i32, i32), chunk: &mut Chunk) {
         let mut r = box_at(start);
         while r.end.0 <= 64 && r.end.1 <= 64 && r.end.2 <= 64 {
-            if rand::random::<bool>() || true {
+            if rand::random::<bool>()
+            || true
+            {
                 chunk.draw_box(r.start, r.end, true);
+                if false
+                // || true
+                {
+                    let end = (r.end.0, r.start.1 + 1, r.end.2);
+                    chunk.fill_box(r.start, end, true);
+                    // let m = 1;
+                    // let start = (
+                    //     r.start.0 + m, r.start.1 + m, r.start.2 + m
+                    // );
+                    // let end = (
+                    //     end.0 - m, end.1 + m, end.2 - m
+                    // );
+                    // chunk.fill_box(start, end, true);
+                    // let m = 1;
+                    // let start = (
+                    //     start.0 + m, start.1 + m, start.2 + m
+                    // );
+                    // let end = (
+                    //     end.0 - m, end.1 + m, end.2 - m
+                    // );
+                    // chunk.fill_box(start, end, true);
+                    break;
+                }
             }
             r = box_at(next_start(r.end));
         }
@@ -654,32 +900,53 @@ pub fn raycast_scene() {
         for y in 0..64/10 {
             for z in 0..64/10 {
                 for x in 0..64/10 {
-                    boxes((x * 10, y * 10, z * 10), &mut chunk);
+                    boxes((x * 10, y * 10, z * 10), &mut trace.chunk);
                 }
             }
         }
         let elapsed = start.elapsed();
         println!("Placed blocks in {elapsed:.3?}");
     });
+    code_toggle!([] {
+        const HELLO: [&'static str; 5] = [
+            "1010111010001000111000101010111011001000110",
+            "1010100010001000101000101010101010101000101",
+            "1110111010001000101000101010101011001000101",
+            "1010100010001000101000101010101010101000101",
+            "1010111011101110111000111110111010101110110",
+        ];
+        trace.chunk.fill_box((0, 31, 0), (12, 31+12, 63), false);
+        trace.chunk.fill_box((0, 30, 0), (63, 31, 63), true);
+        for i in 0..HELLO.len() {
+            for j in 0..HELLO[i].len() {
+                let y = 36 - i as i32;
+                let z = 21 + j as i32;
+                if HELLO[i].as_bytes()[j] == b'1' {
+                    trace.chunk.set(0, y, z, true);
+                }
+            }
+        }
+    });
+
 
     code_toggle!([] {
-        boxes((0, 0, 0), &mut chunk);
-        chunk.fill_box((0, 0, 0), (64, 1, 64), true);
-        chunk.fill_box((31, 1, 31), (32, 16, 32), true);
+        boxes((0, 0, 0), &mut trace.chunk);
+        trace.chunk.fill_box((0, 0+16, 0), (64, 1+16, 64), true);
+        trace.chunk.fill_box((31, 1+16, 31), (32, 16+16, 32), true);
     });
 
     code_toggle!([] {
-        chunk.fill_box((0, 0, 0), (64, 1, 64), true);
+        trace.chunk.fill_box((0, 0, 0), (64, 1, 64), true);
         for i in 0..4 {
             for j in 0..4 {
                 for k in 0..4 {
                     let start = (i * 4 + 16, j * 4, k * 4 + 16);
                     let end = (start.0 + 5, start.1 + 5, start.2 + 5);
-                    chunk.draw_box(start, end, true);
+                    trace.chunk.draw_box(start, end, true);
                 }
             }
         }
-        chunk.fill_box((17, 1, 17), (48, 31, 48), false);
+        trace.chunk.fill_box((17, 1, 17), (48, 31, 48), false);
     });
 
     // for x in 0..64 {
@@ -701,7 +968,7 @@ pub fn raycast_scene() {
     let depth_mul = 1.0 / (far - near);
     let start = std::time::Instant::now();
     {
-        let chunk = &chunk;
+        let trace = &trace;
         let rays = rays.as_slice();
         // let ambient_light = vec3(0.85, 0.85, 0.85);
         // let ambient_light = vec3(0.7, 1.0, 0.5);
@@ -715,7 +982,10 @@ pub fn raycast_scene() {
         img.par_pixels_mut().enumerate().for_each(move |(i, pixel)| {
             let ray = Ray3::new(cam_pos, rays[i]);
             // let ray = rays[i];
-            let Some(hit) = chunk.raycast(ray, far) else {
+            let color = trace.trace_color(ray, near, far);
+            *pixel = rgb(color.x, color.y, color.z);
+            return;
+            let Some(hit) = trace.chunk.raycast(ray, far) else {
                 return;
             };
             if hit.distance < near {
@@ -734,22 +1004,32 @@ pub fn raycast_scene() {
             };
             let normal = face.normal();
             let light_intensity = inv_light_dir.dot(normal);
-            let vox_min = prehit.as_vec3() + 0.0001;
-            let vox_max = vox_min + Vec3::ONE - 0.0002;
-            let hit_point = ray.point_on_ray(hit.distance - 1e-5);
-            let hit_point = hit_point.clamp(vox_min, vox_max);
-            let light_trace = chunk.raycast(Ray3::new(hit_point, inv_light_dir), 100.0);
-            let hit_arr = [hit_point.x as f64, hit_point.y as f64, hit_point.z as f64];
-            let color = pos_color.get(hit_point * noise_scale) * light_intensity * ambient_light;
-            if let Some(light) = light_trace {
-                if light.coord != prehit {
-                    let color = color * shadow;
-                    *pixel = rgb(color.x, color.y, color.z);
-                }
-                return;
-            }
+            // let vox_min = prehit.as_vec3() + <f32>::MIN_POSITIVE;
+            // let vox_max = vox_min + Vec3::ONE - <f32>::MIN_POSITIVE * 2.0;
+            let vox_min = prehit.as_vec3() + 0.00001;
+            let vox_max = vox_min + Vec3::ONE - 0.00002;
+            let hit_point = ray.point_on_ray(hit.distance).clamp(vox_min, vox_max);
+            let mut color = trace.calc_color_before_reflections(hit_point, normal);
             let hit_fract = hit_point.fract();
-            let color = color;
+            fn on_edge(x: f32, y: f32) -> bool {
+                x < 0.05 || y < 0.05 || x >= 0.95 || y >= 0.95
+            }
+            match face {
+                Face::PosX | Face::NegX if on_edge(hit_fract.y, hit_fract.z) => color = color * 0.1,
+                Face::PosY | Face::NegY if on_edge(hit_fract.x, hit_fract.z) => color = color * 0.1,
+                Face::PosZ | Face::NegZ if on_edge(hit_fract.x, hit_fract.y) => color = color * 0.1,
+                _ => (),
+            }
+            // let color = trace.pos_color.get(hit_point * noise_scale) * light_intensity * ambient_light;
+            // if let Some(light) = light_trace {
+            //     if light.coord != prehit {
+            //         let color = color * shadow;
+            //         *pixel = rgb(color.x, color.y, color.z);
+            //     }
+            //     return;
+            // }
+            // let hit_fract = hit_point.fract();
+            // let color = color;
             let color = rgb(color.x, color.y, color.z);
             *pixel = color;
         });

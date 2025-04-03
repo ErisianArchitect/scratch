@@ -171,7 +171,7 @@ impl Chunk {
                 step,
                 Some(vec3(dx_min, dy_min, dz_min)),
                 vec3(dx_max, dy_max, dz_max),
-                max_min - 1e-5,
+                max_min + 1e-5,
             )
         } else {
             let sign = ray.dir.signum();
@@ -360,6 +360,25 @@ impl RayHit {
             coord,
             distance,
         }
+    }
+
+    #[inline(always)]
+    pub fn get_hit_point(&self, ray: Ray3, face: Face) -> Vec3 {
+        let point = ray.point_on_ray(self.distance);
+        let pre_hit = self.coord + match face {
+            Face::PosX => ivec3(1, 0, 0),
+            Face::PosY => ivec3(0, 1, 0),
+            Face::PosZ => ivec3(0, 0, 1),
+            Face::NegX => ivec3(-1, 0, 0),
+            Face::NegY => ivec3(0, -1, 0),
+            Face::NegZ => ivec3(0, 0, -1),
+        };
+        let pre_hit = pre_hit.as_vec3();
+        const SMIDGEN: Vec3 = Vec3::splat(1e-3);
+        const UNSMIDGEN: Vec3 = Vec3::splat(1.0-1e-3);
+        let min = pre_hit + SMIDGEN;
+        let max = pre_hit + UNSMIDGEN;
+        point.clamp(min, max)
     }
 }
 
