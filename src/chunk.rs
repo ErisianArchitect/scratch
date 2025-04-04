@@ -5,12 +5,14 @@ use glam::*;
 // 64x64x64 chunk.
 pub struct Chunk {
     cols: Box<[u64]>,
+    reflection_cols: Box<[u64]>,
 }
 
 impl Chunk {
     pub fn new() -> Self {
         Self {
             cols: (0..4096).map(|_| 0u64).collect::<Box<_>>(),
+            reflection_cols: (0..4096).map(|_| 0u64).collect::<Box<_>>(),
         }
     }
 
@@ -25,6 +27,16 @@ impl Chunk {
         }
         let index = Self::col_index(x, z);
         let col = self.cols[index as usize];
+        (col & (1 << y)) != 0
+    }
+
+    pub fn get_reflection(&self, x: i32, y: i32, z: i32) -> bool {
+        let xyz = x | y | z;
+        if xyz >= 64 || xyz < 0 {
+            return false;
+        }
+        let index = Self::col_index(x, z);
+        let col = self.reflection_cols[index as usize];
         (col & (1 << y)) != 0
     }
 
@@ -43,6 +55,21 @@ impl Chunk {
         self.cols[index as usize] = col;
     }
 
+    pub fn set_reflection(&mut self, x: i32, y: i32, z: i32, on: bool) {
+        let xyz = x | y | z;
+        if xyz >= 64 || xyz < 0 {
+            return;
+        }
+        let index = Self::col_index(x, z);
+        let mut col = self.reflection_cols[index as usize];
+        if on {
+            col = col | (1 << y);
+        } else {
+            col = col & !(1 << y);
+        }
+        self.reflection_cols[index as usize] = col;
+    }
+
     pub fn fill_box(&mut self, start: (i32, i32, i32), end: (i32, i32, i32), on: bool) {
         let end = (end.0.clamp(0, 64), end.1.clamp(0, 64), end.2.clamp(0, 64));
         let start = (
@@ -59,10 +86,32 @@ impl Chunk {
         }
     }
 
+    pub fn fill_box_reflection(&mut self, start: (i32, i32, i32), end: (i32, i32, i32), on: bool) {
+        let end = (end.0.clamp(0, 64), end.1.clamp(0, 64), end.2.clamp(0, 64));
+        let start = (
+            start.0.clamp(0, end.0),
+            start.1.clamp(0, end.1),
+            start.2.clamp(0, end.2),
+        );
+        for x in start.0..end.0 {
+            for z in start.2..end.2 {
+                for y in start.1..end.1 {
+                    self.set_reflection(x, y, z, on);
+                }
+            }
+        }
+    }
+
     pub fn set_with<F: Fn(bool) -> bool>(&mut self, x: i32, y: i32, z: i32, f: F) {
         let cur = self.get(x, y, z);
         let new = f(cur);
         self.set(x, y, z, new);
+    }
+
+    pub fn set_with_reflection<F: Fn(bool) -> bool>(&mut self, x: i32, y: i32, z: i32, f: F) {
+        let cur = self.get_reflection(x, y, z);
+        let new = f(cur);
+        self.set_reflection(x, y, z, new);
     }
 
     pub fn draw_box_with<F: Fn(bool) -> bool>(&mut self, start: (i32, i32, i32), end: (i32, i32, i32), f: F) {
@@ -86,24 +135,52 @@ impl Chunk {
         }
     }
 
+    pub fn draw_box_with_reflection<F: Fn(bool) -> bool>(&mut self, start: (i32, i32, i32), end: (i32, i32, i32), f: F) {
+        for y in start.1..end.1 {
+            self.set_with_reflection(start.0, y, start.2, |b| f(b));
+            self.set_with_reflection(end.0 - 1, y, start.2, |b| f(b));
+            self.set_with_reflection(start.0, y, end.2 - 1, |b| f(b));
+            self.set_with_reflection(end.0 - 1, y, end.2 - 1, |b| f(b));
+        }
+        for z in start.2+1..end.2-1 {
+            self.set_with_reflection(start.0, start.1, z, |b| f(b));
+            self.set_with_reflection(end.0-1, start.1, z, |b| f(b));
+            self.set_with_reflection(start.0, end.1-1, z, |b| f(b));
+            self.set_with_reflection(end.0-1, end.1-1, z, |b| f(b));
+        }
+        for x in start.0+1..end.0-1 {
+            self.set_with_reflection(x, start.1, start.2, |b| f(b));
+            self.set_with_reflection(x, end.1-1, start.2, |b| f(b));
+            self.set_with_reflection(x, start.1, end.2-1, |b| f(b));
+            self.set_with_reflection(x, end.1-1, end.2-1, |b| f(b));
+        }
+    }
+
     pub fn draw_box(&mut self, start: (i32, i32, i32), end: (i32, i32, i32), on: bool) {
         self.draw_box_with(start, end, |_| on);
     }
 
+    pub fn draw_box_reflection(&mut self, start: (i32, i32, i32), end: (i32, i32, i32), on: bool) {
+        self.draw_box_with_reflection(start, end, |_| on);
+    }
+
     pub fn raycast(&self, ray: Ray3, max_distance: f32) -> Option<RayHit> {
         let mut ray = ray;
-        let (step, delta_min, delta_max, delta_add) = if ray.pos.x < 0.0 || ray.pos.y < 0.0 || ray.pos.z < 0.0
-        || ray.pos.x >= 64.0 || ray.pos.y >= 64.0 || ray.pos.z >= 64.0 {
+        let lt = ray.pos.cmplt(Vec3A::ZERO);
+        const SIXTY_FOUR: Vec3A = Vec3A::splat(64.0);
+        let gt = ray.pos.cmpge(SIXTY_FOUR);
+        let outside = lt | gt;
+        let (step, delta_min, delta_max, delta_add) = if outside.any() {
             // Calculate entry point (if there is one).
             // calculate distance to cross each plane
             let sign = ray.dir.signum();
             let step = sign.as_ivec3();
-            if step.x < 0 && ray.pos.x < 0.0
-            || step.x > 0 && ray.pos.x >= 64.0
-            || step.y < 0 && ray.pos.y < 0.0
-            || step.y > 0 && ray.pos.y >= 64.0
-            || step.z < 0 && ray.pos.z < 0.0
-            || step.z > 0 && ray.pos.z > 64.0 {
+            if step.x < 0 && lt.test(0)
+            || step.x > 0 && gt.test(0)
+            || step.y < 0 && lt.test(1)
+            || step.y > 0 && gt.test(1)
+            || step.z < 0 && lt.test(2)
+            || step.z > 0 && gt.test(2) {
                 return None;
             }
             let (dx_min, dx_max) = match step.x + 1 {

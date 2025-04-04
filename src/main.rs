@@ -650,29 +650,41 @@ impl TraceData {
         }
         let hit_point = hit.get_hit_point(ray, face);
         let hit_normal = face.normal();
+        let hit_fract = hit_point.fract();
+        // let cube_color = self.pos_color.get(hit_point.floor() * 2.3);
+        // let checker = checkerboard(hit.coord.x, hit.coord.y, hit.coord.z);
+        // let checker_color = if checker || true {
+        //     Vec3A::ONE
+        // } else {
+        //     Vec3A::ZERO
+        // };
+        // let mut diffuse = checker_color;
         let mut diffuse = self.calc_color_before_reflections(hit_point, hit_normal);
         fn on_edge(x: f32, y: f32) -> bool {
             x < 0.05 || y < 0.05 || x >= 0.95 || y >= 0.95
         }
-        let hit_fract = hit_point.fract();
+        // diffuse = Vec3A::ONE;
         match face {
             Face::PosX | Face::NegX if on_edge(hit_fract.y, hit_fract.z) => diffuse = diffuse * 0.1,
             Face::PosY | Face::NegY if on_edge(hit_fract.x, hit_fract.z) => diffuse = diffuse * 0.1,
             Face::PosZ | Face::NegZ if on_edge(hit_fract.x, hit_fract.y) => diffuse = diffuse * 0.1,
             _ => (),
         }
-        if steps == 1 {
-            return Some(diffuse);
+        if steps > 1 && self.chunk.get_reflection(hit.coord.x, hit.coord.y, hit.coord.z) {
+            // diffuse = Vec3A::ONE;
+            let reflect_dir = reflect(ray.dir, hit_normal);
+            let reflect_ray = Ray3::new(hit_point, reflect_dir);
+            let reflectivity = self.reflection.calculate(hit_normal, ray.dir);
+            let Some(reflection) = self.trace_reflections(reflect_ray, 0.0, far - hit.distance, steps - 1) else {
+                // return Some(combine_reflection(reflectivity, diffuse, self.sky_color(reflect_dir)));
+                return Some(diffuse);
+            };
+            let final_color = combine_reflection(reflectivity, diffuse, reflection);
+            Some(final_color)
+        } else {
+            Some(diffuse)
+            // Some(diffuse * Vec3A::splat(0.4))
         }
-        let reflect_dir = reflect(ray.dir, hit_normal);
-        let reflect_ray = Ray3::new(hit_point, reflect_dir);
-        let reflectivity = self.reflection.calculate(hit_normal, ray.dir);
-        let Some(reflection) = self.trace_reflections(reflect_ray, 0.0, far - hit.distance, steps - 1) else {
-            // return Some(combine_reflection(reflectivity, diffuse, self.sky_color(reflect_dir)));
-            return Some(diffuse);
-        };
-        let final_color = combine_reflection(reflectivity, diffuse, reflection);
-        Some(final_color)
     }
 
     pub fn trace_color(&self, ray: Ray3, near: f32, far: f32) -> Vec3A {
@@ -699,6 +711,10 @@ fn testit() {
     }
 }
 
+fn checkerboard(x: i32, y: i32, z: i32) -> bool {
+    ((x & 1) ^ (y & 1) ^ (z & 1)) != 0
+}
+
 pub fn raycast_scene() {
     use glam::*;
     use scratch::math::*;
@@ -706,7 +722,7 @@ pub fn raycast_scene() {
     use scratch::perlin::perlin;
     use rayon::prelude::*;
     use noise::OpenSimplex;
-    const SSAA: bool = false;
+    const SSAA: bool = true;
     println!("Starting.");
     const SEED: u32 = 1205912;
     // let simplex = OpenSimplex::new(SEED);
@@ -721,10 +737,12 @@ pub fn raycast_scene() {
         scale: 1.0,
     };
     let perm = Permutation::from_seed(make_seed(SEED as u64));
+    // let size = GridSize::new(512, 512);
+    // let size = GridSize::new(2048, 2048);
     // let size = GridSize::new(1280, 720);
     // let size = GridSize::new(1920, 1080);
-    let size = GridSize::new(1920, 1080);
-    // let size = GridSize::new(2048, 2048);
+    let size = GridSize::new(1920*2, 1080*2);
+    // let size = GridSize::new(1920*4, 1080*4);
     let size = if SSAA {
         GridSize::new(size.width * 2, size.height * 2)
     } else {
@@ -733,8 +751,9 @@ pub fn raycast_scene() {
     // let same = 1024*16;
     // let size = GridSize::new(same, same/2);
     let mut cam = Camera::from_look_at(vec3a(-24.0, 70.0-12.0, 48.0), vec3a(32., 32.-12., 32.), 45.0f32.to_radians(), 1.0, 100.0, (size.width, size.height));
-    // let mut cam = Camera::from_look_at(vec3(-24.0, 70.0-12.0, 64.0+24.0), vec3(32., 32.-12., 32.), 90.0f32.to_radians(), 1.0, 100.0, (size.width, size.height));
-    // let mut cam = Camera::from_look_at(vec3(24.0, 24.0, 16.0), vec3(32.0, 8.0, 32.0), 90.0f32.to_radians(), 1.0, 100.0, (size.width, size.height));
+    // let mut cam = Camera::from_look_at(vec3a(-24.0, 70.0-12.0, 64.0+24.0), vec3a(32., 32.-12., 32.), 90.0f32.to_radians(), 1.0, 100.0, (size.width, size.height));
+    // let mut cam = Camera::from_look_at(vec3a(42.0, 7.0, 42.0), vec3a(32., 5., 32.), 90.0f32.to_radians(), 1.0, 100.0, (size.width, size.height));
+    // let mut cam = Camera::from_look_at(vec3a(24.0, 24.0, 16.0), vec3a(32.0, 8.0, 32.0), 90.0f32.to_radians(), 1.0, 100.0, (size.width, size.height));
 
     let mut last = IVec3::ZERO;
     let mut chunk = Chunk::new();
@@ -749,7 +768,7 @@ pub fn raycast_scene() {
             ),
             ambient: AmbientLight {
                 color: vec3a(1.0, 1.0, 1.0),
-                intensity: 0.2,
+                intensity: 1.0,
             },
             shadow: Shadow {
                 factor: 0.2,
@@ -760,9 +779,6 @@ pub fn raycast_scene() {
         reflection: Reflection { reflectivity: 0.5 },
         reflection_steps: 5,
     };
-    fn checkerboard(x: i32, y: i32, z: i32) -> bool {
-        ((x & 1) ^ (y & 1) ^ (z & 1)) != 0
-    }
     let start = Instant::now();
     let ray_calc = RayCalc::new(cam.fov, cam.screen_size);
     let cam_pos = cam.position;
@@ -775,22 +791,11 @@ pub fn raycast_scene() {
         let wh = vec2(size.width as f32, size.height as f32);
         let hs = vec2(0.5, 0.5);
         let screen_pos = (xy / wh) - hs;
-        // let screen_pos = vec2(x as f32 / size.width as f32 - 0.5, y as f32 / size.height as f32 - 0.5);
-        // cam_ref.normalized_screen_to_ray(screen_pos).dir
         let dir = ray_calc.calc_ray_dir(screen_pos);
         cam_rot * dir
-        // rot_dir(dir, cam_rot)
     }).collect::<Vec<_>>();
     let elapsed = start.elapsed();
     println!("Calculated {} rays in {elapsed:.3?}", rays.len());
-
-    // for x in 0..64 {
-    //     for z in 0..64 {
-    //         for y in 0..64 {
-    //             chunk.set(x, y, z, checkerboard(x, y, z));
-    //         }
-    //     }
-    // }
 
     code_toggle!([] {
         let start = Instant::now();
@@ -808,51 +813,6 @@ pub fn raycast_scene() {
         let elapsed = start.elapsed();
         println!("Generated terrain in {elapsed:.3?}");
     });
-    // for x in 0i32..64 {
-    //     for y in 0i32..64 {
-    //         for z in 0i32..64 {
-    //             let ox = (32 - x).abs();
-    //             let oy = (32 - y).abs();
-    //             let oz = (32 - z).abs();
-    //             let ods = ((ox + 7) * (ox + 7)) + ((oy + 7) * (oy + 7)) + oz * oz;
-    //             if ods <= DS {
-    //                 chunk.set(x as u32, y as u32, z as u32, true);
-    //             }
-    //             // let mut c = 0;
-    //             // if x % 8 == 0 {
-    //             //     c += 1;
-    //             // }
-    //             // if y % 8 == 0 {
-    //             //     c += 1;
-    //             // }
-    //             // if z % 8 == 0 {
-    //             //     c += 1;
-    //             // }
-    //             // if c > 1 {
-    //             //     chunk.set(x, y, z, true);
-    //             // }
-    //         }
-    //     }
-    // }
-
-    // for x in 0..64 {
-    //     for y in 0..64 {
-    //         for z in 0..64 {
-    //             chunk.set(x, y, z, true);
-    //         }
-    //     }
-    // }
-    // let line_width = 4;
-    // chunk.fill_box((16, 16, 16), (48, 48, 48), true);
-    // chunk.fill_box((16, 16 + line_width, 16 + line_width), (48, 48 - line_width, 48 - line_width), false);
-    // chunk.fill_box((16 + line_width, 16, 16 + line_width), (48 - line_width, 48, 48 - line_width), false);
-    // chunk.fill_box((16 + line_width, 16 + line_width, 16), (48 - line_width, 48 - line_width, 48), false);
-
-    // chunk.draw_box((16, 16, 16), (48, 48, 48), true);
-    // chunk.draw_box((20, 20, 20), (44, 44, 44), true);
-    // chunk.draw_box((24, 24, 24), (40, 40, 40), true);
-    // chunk.draw_box((28, 28, 28), (36, 36, 36), true);
-    // 10202010102020101020201
     fn box_at(start: (i32, i32, i32)) -> std::ops::Range<(i32, i32, i32)> {
         start..(start.0 + 6, start.1 + 6, start.2 + 6)
     }
@@ -872,6 +832,7 @@ pub fn raycast_scene() {
                 {
                     let end = (r.end.0, r.start.1 + 1, r.end.2);
                     chunk.fill_box(r.start, end, true);
+                    chunk.fill_box_reflection(r.start, end, true);
                     // let m = 1;
                     // let start = (
                     //     r.start.0 + m, r.start.1 + m, r.start.2 + m
@@ -906,6 +867,33 @@ pub fn raycast_scene() {
         let elapsed = start.elapsed();
         println!("Placed blocks in {elapsed:.3?}");
     });
+    // Apartments
+    code_toggle!([] {
+        for z in 0..16 {
+            for x in 0..16 {
+                for y in 0..16 {
+                    let start = ivec3(x * 4, y * 4, z * 4);
+                    let end = start + ivec3(4, 1, 4);
+                    trace.chunk.fill_box((start.x, start.y, start.z), (end.x, end.y, end.z), true);
+                    trace.chunk.fill_box_reflection((start.x+1, start.y, start.z+1), (end.x, end.y, end.z), true);
+                    trace.chunk.fill_box((start.x, start.y + 1, start.z), (start.x+1, start.y + 4, start.z+1), true);
+                    // trace.chunk.fill_box_reflection((start.x, start.y + 1, start.z), (start.x+1, start.y + 4, start.z+1), true);
+                }
+            }
+        }
+    });
+    code_toggle!([] {
+        for z in 0..64 {
+            for x in 0..64 {
+                for y in 0..64 {
+                    let present = trace.chunk.get(x, y, z);
+                    if present && checkerboard(x, y, z) {
+                        trace.chunk.set_reflection(x, y, z, true);
+                    }
+                }
+            }
+        }
+    });
     code_toggle!([] {
         const HELLO: [&'static str; 5] = [
             "1010111010001000111000101010111011001000110",
@@ -927,6 +915,13 @@ pub fn raycast_scene() {
         }
     });
 
+    // Reflection scene
+    code_toggle!([] {
+        trace.chunk.fill_box((0, 0, 0), (64, 2, 64), true);
+        trace.chunk.fill_box_reflection((26, 0, 26), (38, 2, 38), true);
+        trace.chunk.fill_box((31, 4, 31), (33, 6, 33), true);
+        trace.chunk.fill_box_reflection((31, 4, 31), (33, 6, 33), true);
+    });
 
     code_toggle!([] {
         boxes((0, 0, 0), &mut trace.chunk);
