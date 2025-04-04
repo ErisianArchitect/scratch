@@ -755,7 +755,7 @@ pub fn raycast_scene() {
             ),
             ambient: AmbientLight {
                 color: vec3(1.0, 1.0, 1.0),
-                intensity: 0.2,
+                intensity: 1.0,
             },
             shadow: Shadow {
                 factor: 0.2,
