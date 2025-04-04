@@ -377,49 +377,49 @@ fn rot_dir(dir: Vec3, rot: Vec2) -> Vec3 {
 fn glam_test() {
     use glam::*;
 
-    let x = -0.73;
-    let y = -0.5;
-    let fov = 45f32.to_radians();
-    let aspect_ratio = 1920.0 / 1080.0;
+    // let x = -0.73;
+    // let y = -0.5;
+    // let fov = 45f32.to_radians();
+    // let aspect_ratio = 1920.0 / 1080.0;
 
-    let tan_fov_half = (fov * 0.5).tan();
-    let asp_fov = aspect_ratio * tan_fov_half;
+    // let tan_fov_half = (fov * 0.5).tan();
+    // let asp_fov = aspect_ratio * tan_fov_half;
 
-    let nx = x * asp_fov;
-    let ny = -y * tan_fov_half;
-    // (forward + nx * right + ny * up).normalize()
-    let ray_dir = vec3(nx, ny, -1.0).normalize();
+    // let nx = x * asp_fov;
+    // let ny = -y * tan_fov_half;
+    // // (forward + nx * right + ny * up).normalize()
+    // let ray_dir = vec3(nx, ny, -1.0).normalize();
 
-    let cam = Camera::from_look_to(Vec3::ZERO, Vec3::NEG_Z, 45f32.to_radians(), 1.0, 100.0, (1920, 1080));
+    // let cam = Camera::from_look_to(Vec3A::ZERO, Vec3A::NEG_Z, 45f32.to_radians(), 1.0, 100.0, (1920, 1080));
 
-    let cam_dir = cam.normalized_screen_to_ray(vec2(x, y));
+    // let cam_dir = cam.normalized_screen_to_ray(vec2(x, y));
 
-    let dot = ray_dir.dot(cam_dir.dir);
-    println!("Dot: {dot:.5}");
+    // let dot = ray_dir.dot(cam_dir.dir);
+    // println!("Dot: {dot:.5}");
 
-    let angle = 90f32.to_radians();
-    let s = angle.sin();
-    let c = angle.cos();
-    let unrot = vec2(0.0, 1.0);
-    let rot = vec2(
-        unrot.x * c - unrot.y * s,
-        unrot.x * s + unrot.y * c,
-    );
-    let left = vec2(-1.0, 0.0);
-    let dot = rot.dot(left);
+    // let angle = 90f32.to_radians();
+    // let s = angle.sin();
+    // let c = angle.cos();
+    // let unrot = vec2(0.0, 1.0);
+    // let rot = vec2(
+    //     unrot.x * c - unrot.y * s,
+    //     unrot.x * s + unrot.y * c,
+    // );
+    // let left = vec2(-1.0, 0.0);
+    // let dot = rot.dot(left);
     
-    println!("{rot:?}\n{dot:.4?}");
-    println!("################################");
-    let rot = vec2(33.0f32.to_radians(), 12.0f32.to_radians());
-    let quaty = Quat::from_rotation_y(rot.y);
-    let quatx = Quat::from_rotation_x(rot.x);
-    let quat = quatx * quaty;
-    let quat = Quat::from_euler(EulerRot::YXZ, rot.y, rot.x, 0.0);
-    let dir = Vec3::NEG_Z;
-    let rot_dir1 = quat * dir;
-    let rot_dir2 = rot_dir(dir, vec2(rot.x, rot.y));
-    println!("Len1: {:.3}, Len2: {:.3}", rot_dir1.length(), rot_dir2.length());
-    println!("Rot Dot: {}", rot_dir1.dot(rot_dir2));
+    // println!("{rot:?}\n{dot:.4?}");
+    // println!("################################");
+    // let rot = vec2(33.0f32.to_radians(), 12.0f32.to_radians());
+    // let quaty = Quat::from_rotation_y(rot.y);
+    // let quatx = Quat::from_rotation_x(rot.x);
+    // let quat = quatx * quaty;
+    // let quat = Quat::from_euler(EulerRot::YXZ, rot.y, rot.x, 0.0);
+    // let dir = Vec3::NEG_Z;
+    // let rot_dir1 = quat * dir;
+    // let rot_dir2 = rot_dir(dir, vec2(rot.x, rot.y));
+    // println!("Len1: {:.3}, Len2: {:.3}", rot_dir1.length(), rot_dir2.length());
+    // println!("Rot Dot: {}", rot_dir1.dot(rot_dir2));
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -437,9 +437,9 @@ impl RayCalc {
         }
     }
 
-    pub fn calc_ray_dir(self, ndc: Vec2) -> Vec3 {
+    pub fn calc_ray_dir(self, ndc: Vec2) -> Vec3A {
         let m = ndc * self.mult;
-        vec3(m.x, m.y, -1.0).normalize()
+        vec3a(m.x, m.y, -1.0).normalize()
     }
 }
 
@@ -488,15 +488,15 @@ struct PosColor {
 }
 
 impl PosColor {
-    pub fn get_with_scale(&self, pos: Vec3, scale: f64) -> Vec3 {
+    pub fn get_with_scale(&self, pos: Vec3A, scale: f64) -> Vec3A {
         let pos_arr = [pos.x as f64 * scale, pos.y as f64 * scale, pos.z as f64 * scale];
         let r: f64 = self.rsimp.get(pos_arr) * 0.5 + 0.5;
         let g: f64 = self.gsimp.get(pos_arr) * 0.5 + 0.5;
         let b: f64 = self.bsimp.get(pos_arr) * 0.5 + 0.5;
-        vec3(r as f32, g as f32, b as f32)
+        vec3a(r as f32, g as f32, b as f32)
     }
 
-    pub fn get(&self, pos: Vec3) -> Vec3 {
+    pub fn get(&self, pos: Vec3A) -> Vec3A {
         // Vec3::ONE
         // Vec3::Y
 
@@ -504,7 +504,7 @@ impl PosColor {
         let r: f64 = self.rsimp.get(pos_arr) * 0.5 + 0.5;
         let g: f64 = self.gsimp.get(pos_arr) * 0.5 + 0.5;
         let b: f64 = self.bsimp.get(pos_arr) * 0.5 + 0.5;
-        vec3(r as f32, g as f32, b as f32)
+        vec3a(r as f32, g as f32, b as f32)
     }
 
 }
@@ -523,15 +523,15 @@ fn rgb(r: f32, g: f32, b: f32) -> Rgb<u8> {
 
 #[derive(Debug, Clone, Copy)]
 pub struct DirectionalLight {
-    pub direction: Vec3,
-    pub color: Vec3,
+    pub direction: Vec3A,
+    pub color: Vec3A,
     pub intensity: f32,
-    pub pre_calc: Vec3,
-    pub inv_dir: Vec3,
+    pub pre_calc: Vec3A,
+    pub inv_dir: Vec3A,
 }
 
 impl DirectionalLight {
-    pub fn new(direction: Vec3, color: Vec3, intensity: f32) -> Self {
+    pub fn new(direction: Vec3A, color: Vec3A, intensity: f32) -> Self {
         Self {
             direction,
             color,
@@ -541,7 +541,7 @@ impl DirectionalLight {
         }
     }
     #[inline(always)]
-    pub fn apply(&self, color: Vec3, normal: Vec3) -> Vec3 {
+    pub fn apply(&self, color: Vec3A, normal: Vec3A) -> Vec3A {
         let dot = self.inv_dir.dot(normal);
         (color * self.pre_calc) * dot
     }
@@ -554,37 +554,21 @@ pub struct Shadow {
 
 impl Shadow {
     #[inline(always)]
-    pub fn apply(self, color: Vec3) -> Vec3 {
+    pub fn apply(self, color: Vec3A) -> Vec3A {
         color * self.factor
-    }
-}
-
-impl std::ops::Mul<Vec3> for Shadow {
-    type Output = Vec3;
-    #[inline(always)]
-    fn mul(self, rhs: Vec3) -> Self::Output {
-        self.apply(rhs)
     }
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct AmbientLight {
-    pub color: Vec3,
+    pub color: Vec3A,
     pub intensity: f32,
 }
 
 impl AmbientLight {
     #[inline(always)]
-    pub fn apply(self, color: Vec3) -> Vec3 {
+    pub fn apply(self, color: Vec3A) -> Vec3A {
         self.color * color
-    }
-}
-
-impl std::ops::Mul<Vec3> for AmbientLight {
-    type Output = Vec3;
-    #[inline(always)]
-    fn mul(self, rhs: Vec3) -> Self::Output {
-        self.apply(rhs)
     }
 }
 
@@ -596,14 +580,14 @@ pub struct Lighting {
 
 impl Lighting {
     #[inline(always)]
-    pub fn calculate(&self, color: Vec3, normal: Vec3, occluded: bool) -> Vec3 {
+    pub fn calculate(&self, color: Vec3A, normal: Vec3A, occluded: bool) -> Vec3A {
         let ambient = self.ambient.color;
         let directional = self.directional.inv_dir.dot(normal);
         let directional_color = self.directional.pre_calc * directional;
         let light = ((1.0 - directional) * self.ambient.intensity) * ambient + directional_color;
         let color = color * light;
         if occluded {
-            self.shadow * color
+            self.shadow.apply(color)
         } else {
             color
         }
@@ -616,12 +600,12 @@ pub struct Reflection {
 }
 
 #[inline(always)]
-fn reflect(ray_dir: Vec3, normal: Vec3) -> Vec3 {
+fn reflect(ray_dir: Vec3A, normal: Vec3A) -> Vec3A {
     ray_dir - 2.0 * (ray_dir * normal) * normal
 }
 
 #[inline(always)]
-fn combine_reflection(reflectivity: f32, diffuse: Vec3, reflection: Vec3) -> Vec3 {
+fn combine_reflection(reflectivity: f32, diffuse: Vec3A, reflection: Vec3A) -> Vec3A {
     reflectivity * reflection + (1.0 - reflectivity) * diffuse
 }
 
@@ -629,8 +613,8 @@ impl Reflection {
     #[inline(always)]
     pub fn calculate(
         self,
-        surface_normal: Vec3,
-        view_dir: Vec3,
+        surface_normal: Vec3A,
+        view_dir: Vec3A,
     ) -> f32 {
         let dot = (-view_dir).dot(surface_normal).max(0.0);
         self.reflectivity + (1.0 - self.reflectivity) * (1.0 - dot).powf(5.0)
@@ -641,28 +625,28 @@ pub struct TraceData {
     chunk: Chunk,
     pos_color: PosColor,
     lighting: Lighting,
-    sky_color: Vec3,
+    sky_color: Vec3A,
     reflection: Reflection,
     reflection_steps: u16,
 }
 
 impl TraceData {
-    pub fn calc_color_before_reflections(&self, hit_point: Vec3, hit_normal: Vec3) -> Vec3 {
+    pub fn calc_color_before_reflections(&self, hit_point: Vec3A, hit_normal: Vec3A) -> Vec3A {
         let color = self.pos_color.get(hit_point);
         let light_ray = Ray3::new(hit_point, self.lighting.directional.inv_dir);
         let light_hit = self.chunk.raycast(light_ray, 100.0);
         self.lighting.calculate(color, hit_normal, light_hit.is_some())
     }
 
-    pub fn trace_reflections(&self, ray: Ray3, near: f32, far: f32, steps: u16) -> Option<Vec3> {
+    pub fn trace_reflections(&self, ray: Ray3, near: f32, far: f32, steps: u16) -> Option<Vec3A> {
         let Some(hit) = self.chunk.raycast(ray, far) else {
             return Some(self.sky_color(ray.dir));
         };
         let Some(face) = hit.face else {
-            return Some(Vec3::X);
+            return Some(Vec3A::X);
         };
         if hit.distance < near {
-            return Some(Vec3::Y);
+            return Some(Vec3A::Y);
         }
         let hit_point = hit.get_hit_point(ray, face);
         let hit_normal = face.normal();
@@ -691,16 +675,27 @@ impl TraceData {
         Some(final_color)
     }
 
-    pub fn trace_color(&self, ray: Ray3, near: f32, far: f32) -> Vec3 {
+    pub fn trace_color(&self, ray: Ray3, near: f32, far: f32) -> Vec3A {
         if let Some(color) = self.trace_reflections(ray, near, far, self.reflection_steps) {
             color
         } else {
-            self.sky_color(ray.dir)
+            self.sky_color(ray.dir.into())
         }
     }
 
-    pub fn sky_color(&self, ray_dir: Vec3) -> Vec3 {
+    pub fn sky_color(&self, ray_dir: Vec3A) -> Vec3A {
         self.lighting.ambient.apply(self.pos_color.get(ray_dir) * self.sky_color)
+    }
+}
+
+#[test]
+fn testit() {
+    let v = 1.24523f32;
+    let c = v.clamp(0.0, 10.0);
+    if c != v {
+        println!("Changed")
+    } else {
+        println!("Same")
     }
 }
 
@@ -737,7 +732,7 @@ pub fn raycast_scene() {
     };
     // let same = 1024*16;
     // let size = GridSize::new(same, same/2);
-    let mut cam = Camera::from_look_at(vec3(-24.0, 70.0-12.0, 48.0), vec3(32., 32.-12., 32.), 45.0f32.to_radians(), 1.0, 100.0, (size.width, size.height));
+    let mut cam = Camera::from_look_at(vec3a(-24.0, 70.0-12.0, 48.0), vec3a(32., 32.-12., 32.), 45.0f32.to_radians(), 1.0, 100.0, (size.width, size.height));
     // let mut cam = Camera::from_look_at(vec3(-24.0, 70.0-12.0, 64.0+24.0), vec3(32., 32.-12., 32.), 90.0f32.to_radians(), 1.0, 100.0, (size.width, size.height));
     // let mut cam = Camera::from_look_at(vec3(24.0, 24.0, 16.0), vec3(32.0, 8.0, 32.0), 90.0f32.to_radians(), 1.0, 100.0, (size.width, size.height));
 
@@ -748,12 +743,12 @@ pub fn raycast_scene() {
         pos_color,
         lighting: Lighting {
             directional: DirectionalLight::new(
-                vec3(0.5, -1.0, -1.0).normalize(),
-                vec3(1.0, 1.0, 1.0),
+                vec3a(0.5, -1.0, -1.0).normalize(),
+                vec3a(1.0, 1.0, 1.0),
                 0.5,
             ),
             ambient: AmbientLight {
-                color: vec3(1.0, 1.0, 1.0),
+                color: vec3a(1.0, 1.0, 1.0),
                 intensity: 0.2,
             },
             shadow: Shadow {
@@ -761,7 +756,7 @@ pub fn raycast_scene() {
             },
         },
         // sky_color: Vec3::splat(0.0),
-        sky_color: Vec3::splat(1.0),
+        sky_color: Vec3A::splat(1.0),
         reflection: Reflection { reflectivity: 0.5 },
         reflection_steps: 5,
     };

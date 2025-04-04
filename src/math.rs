@@ -30,14 +30,14 @@ impl Face {
         }
     }
 
-    pub fn normal(self) -> Vec3 {
+    pub fn normal(self) -> Vec3A {
         match self {
-            Face::PosX => Vec3::X,
-            Face::PosY => Vec3::Y,
-            Face::PosZ => Vec3::Z,
-            Face::NegX => Vec3::NEG_X,
-            Face::NegY => Vec3::NEG_Y,
-            Face::NegZ => Vec3::NEG_Z,
+            Face::PosX => Vec3A::X,
+            Face::PosY => Vec3A::Y,
+            Face::PosZ => Vec3A::Z,
+            Face::NegX => Vec3A::NEG_X,
+            Face::NegY => Vec3A::NEG_Y,
+            Face::NegZ => Vec3A::NEG_Z,
         }
     }
 }
@@ -144,8 +144,8 @@ pub fn next_face(point: Vec3, direction: Vec3, cell_size: Vec3, cell_offset: Vec
 
 pub fn raycast<F: FnMut(&IVec3, Face, f32) -> bool>(
     ray: Ray3,
-    cell_size: Vec3,
-    cell_offset: Vec3,
+    cell_size: Vec3A,
+    cell_offset: Vec3A,
     mut callback: F,
 ) {
     fn calc_step(cell_size: f32, magnitude: f32) -> f32 {

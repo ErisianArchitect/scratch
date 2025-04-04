@@ -358,7 +358,7 @@ impl RayHit {
     }
 
     #[inline(always)]
-    pub fn get_hit_point(&self, ray: Ray3, face: Face) -> Vec3 {
+    pub fn get_hit_point(&self, ray: Ray3, face: Face) -> Vec3A {
         let point = ray.point_on_ray(self.distance);
         let pre_hit = self.coord + match face {
             Face::PosX => ivec3(1, 0, 0),
@@ -368,9 +368,9 @@ impl RayHit {
             Face::NegY => ivec3(0, -1, 0),
             Face::NegZ => ivec3(0, 0, -1),
         };
-        let pre_hit = pre_hit.as_vec3();
-        const SMIDGEN: Vec3 = Vec3::splat(1e-3);
-        const UNSMIDGEN: Vec3 = Vec3::splat(1.0-1e-3);
+        let pre_hit = pre_hit.as_vec3a();
+        const SMIDGEN: Vec3A = Vec3A::splat(1e-3);
+        const UNSMIDGEN: Vec3A = Vec3A::splat(1.0-1e-3);
         let min = pre_hit + SMIDGEN;
         let max = pre_hit + UNSMIDGEN;
         point.clamp(min, max)

@@ -2,8 +2,8 @@ use glam::*;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct Ray3 {
-    pub pos: Vec3,
-    pub dir: Vec3,
+    pub pos: Vec3A,
+    pub dir: Vec3A,
 }
 
 impl Ray3 {
@@ -11,14 +11,14 @@ impl Ray3 {
     /// 
     /// This does not normalize the direction, so make sure you normalize
     /// that first.
-    pub fn new(pos: Vec3, dir: Vec3) -> Self {
+    pub fn new(pos: Vec3A, dir: Vec3A) -> Self {
         Self {
             pos,
             dir,
         }
     }
 
-    pub fn from_target(pos: Vec3, target: Vec3) -> Self {
+    pub fn from_target(pos: Vec3A, target: Vec3A) -> Self {
         Self {
             pos,
             dir: (target - pos).normalize(),
@@ -32,7 +32,7 @@ impl Ray3 {
         }
     }
 
-    pub fn point_on_ray(&self, t: f32) -> Vec3 {
+    pub fn point_on_ray(&self, t: f32) -> Vec3A {
         (self.dir * t) + self.pos
     }
 }
