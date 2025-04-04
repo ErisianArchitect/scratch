@@ -497,12 +497,14 @@ impl PosColor {
     }
 
     pub fn get(&self, pos: Vec3) -> Vec3 {
-        Vec3::ONE
-        // let pos_arr = [pos.x as f64 * self.scale, pos.y as f64 * self.scale, pos.z as f64 * self.scale];
-        // let r: f64 = self.rsimp.get(pos_arr) * 0.5 + 0.5;
-        // let g: f64 = self.gsimp.get(pos_arr) * 0.5 + 0.5;
-        // let b: f64 = self.bsimp.get(pos_arr) * 0.5 + 0.5;
-        // vec3(r as f32, g as f32, b as f32)
+        // Vec3::ONE
+        // Vec3::Y
+
+        let pos_arr = [pos.x as f64 * self.scale, pos.y as f64 * self.scale, pos.z as f64 * self.scale];
+        let r: f64 = self.rsimp.get(pos_arr) * 0.5 + 0.5;
+        let g: f64 = self.gsimp.get(pos_arr) * 0.5 + 0.5;
+        let b: f64 = self.bsimp.get(pos_arr) * 0.5 + 0.5;
+        vec3(r as f32, g as f32, b as f32)
     }
 
 }
@@ -668,13 +670,13 @@ impl TraceData {
         fn on_edge(x: f32, y: f32) -> bool {
             x < 0.05 || y < 0.05 || x >= 0.95 || y >= 0.95
         }
-        // let hit_fract = hit_point.fract();
-        // match face {
-        //     Face::PosX | Face::NegX if on_edge(hit_fract.y, hit_fract.z) => diffuse = diffuse * 0.1,
-        //     Face::PosY | Face::NegY if on_edge(hit_fract.x, hit_fract.z) => diffuse = diffuse * 0.1,
-        //     Face::PosZ | Face::NegZ if on_edge(hit_fract.x, hit_fract.y) => diffuse = diffuse * 0.1,
-        //     _ => (),
-        // }
+        let hit_fract = hit_point.fract();
+        match face {
+            Face::PosX | Face::NegX if on_edge(hit_fract.y, hit_fract.z) => diffuse = diffuse * 0.1,
+            Face::PosY | Face::NegY if on_edge(hit_fract.x, hit_fract.z) => diffuse = diffuse * 0.1,
+            Face::PosZ | Face::NegZ if on_edge(hit_fract.x, hit_fract.y) => diffuse = diffuse * 0.1,
+            _ => (),
+        }
         if steps == 1 {
             return Some(diffuse);
         }
@@ -726,7 +728,7 @@ pub fn raycast_scene() {
     let perm = Permutation::from_seed(make_seed(SEED as u64));
     // let size = GridSize::new(1280, 720);
     // let size = GridSize::new(1920, 1080);
-    let size = GridSize::new(1920*2, 1080*2);
+    let size = GridSize::new(1920*4, 1080*4);
     // let size = GridSize::new(2048, 2048);
     let size = if SSAA {
         GridSize::new(size.width * 2, size.height * 2)
@@ -736,6 +738,7 @@ pub fn raycast_scene() {
     // let same = 1024*16;
     // let size = GridSize::new(same, same/2);
     let mut cam = Camera::from_look_at(vec3(-24.0, 70.0-12.0, 48.0), vec3(32., 32.-12., 32.), 45.0f32.to_radians(), 1.0, 100.0, (size.width, size.height));
+    // let mut cam = Camera::from_look_at(vec3(-24.0, 70.0-12.0, 64.0+24.0), vec3(32., 32.-12., 32.), 90.0f32.to_radians(), 1.0, 100.0, (size.width, size.height));
     // let mut cam = Camera::from_look_at(vec3(24.0, 24.0, 16.0), vec3(32.0, 8.0, 32.0), 90.0f32.to_radians(), 1.0, 100.0, (size.width, size.height));
 
     let mut last = IVec3::ZERO;
@@ -754,11 +757,12 @@ pub fn raycast_scene() {
                 intensity: 0.2,
             },
             shadow: Shadow {
-                factor: 0.1,
+                factor: 0.2,
             },
         },
-        sky_color: Vec3::splat(0.),
-        reflection: Reflection { reflectivity: 0.3 },
+        // sky_color: Vec3::splat(0.0),
+        sky_color: Vec3::splat(1.0),
+        reflection: Reflection { reflectivity: 0.5 },
         reflection_steps: 5,
     };
     fn checkerboard(x: i32, y: i32, z: i32) -> bool {
@@ -869,7 +873,7 @@ pub fn raycast_scene() {
             {
                 chunk.draw_box(r.start, r.end, true);
                 if false
-                // || true
+                || true
                 {
                     let end = (r.end.0, r.start.1 + 1, r.end.2);
                     chunk.fill_box(r.start, end, true);
@@ -952,11 +956,11 @@ pub fn raycast_scene() {
     // for x in 0..64 {
     //     for z in 0..64 {
     //         for y in 0..64 {
-    //             let b = chunk.get(x, y, z);
+    //             let b = trace.chunk.get(x, y, z);
     //             let cb1 = checkerboard(x, y, z);
     //             let cb2 = checkerboard(x/2, y/2, z/2);
     //             let cb3 = checkerboard(x/4, y/4, z/4);
-    //             chunk.set(x, y, z, b && cb1 && cb2 && cb3);
+    //             trace.chunk.set(x, y, z, b && cb1 && cb2 && cb3);
     //         }
     //     }
     // }
@@ -965,82 +969,22 @@ pub fn raycast_scene() {
 
     let near = 0.1;
     let far = 250.0;
-    let depth_mul = 1.0 / (far - near);
+    // let depth_mul = 1.0 / (far - near);
     let start = std::time::Instant::now();
     {
         let trace = &trace;
         let rays = rays.as_slice();
-        // let ambient_light = vec3(0.85, 0.85, 0.85);
-        // let ambient_light = vec3(0.7, 1.0, 0.5);
-        let ambient_light = vec3(1.0, 1.0, 1.0);
-        // let ambient_light = vec3(0.7, 0.3, 1.0);
-        let light_strength = 1.0;
-        let light_dir = vec3(0.5, -1.0, 1.0).normalize() * light_strength;
-        let inv_light_dir = -light_dir;
-        let shadow = 0.4;
-        let noise_scale = 2.0;
         img.par_pixels_mut().enumerate().for_each(move |(i, pixel)| {
             let ray = Ray3::new(cam_pos, rays[i]);
-            // let ray = rays[i];
             let color = trace.trace_color(ray, near, far);
             *pixel = rgb(color.x, color.y, color.z);
             return;
-            let Some(hit) = trace.chunk.raycast(ray, far) else {
-                return;
-            };
-            if hit.distance < near {
-                return;
-            }
-            let Some(face) = hit.face else {
-                return;
-            };
-            let prehit = hit.coord + match face {
-                Face::PosX => IVec3::X,
-                Face::PosY => IVec3::Y,
-                Face::PosZ => IVec3::Z,
-                Face::NegX => IVec3::NEG_X,
-                Face::NegY => IVec3::NEG_Y,
-                Face::NegZ => IVec3::NEG_Z,
-            };
-            let normal = face.normal();
-            let light_intensity = inv_light_dir.dot(normal);
-            // let vox_min = prehit.as_vec3() + <f32>::MIN_POSITIVE;
-            // let vox_max = vox_min + Vec3::ONE - <f32>::MIN_POSITIVE * 2.0;
-            let vox_min = prehit.as_vec3() + 0.00001;
-            let vox_max = vox_min + Vec3::ONE - 0.00002;
-            let hit_point = ray.point_on_ray(hit.distance).clamp(vox_min, vox_max);
-            let mut color = trace.calc_color_before_reflections(hit_point, normal);
-            let hit_fract = hit_point.fract();
-            fn on_edge(x: f32, y: f32) -> bool {
-                x < 0.05 || y < 0.05 || x >= 0.95 || y >= 0.95
-            }
-            match face {
-                Face::PosX | Face::NegX if on_edge(hit_fract.y, hit_fract.z) => color = color * 0.1,
-                Face::PosY | Face::NegY if on_edge(hit_fract.x, hit_fract.z) => color = color * 0.1,
-                Face::PosZ | Face::NegZ if on_edge(hit_fract.x, hit_fract.y) => color = color * 0.1,
-                _ => (),
-            }
-            // let color = trace.pos_color.get(hit_point * noise_scale) * light_intensity * ambient_light;
-            // if let Some(light) = light_trace {
-            //     if light.coord != prehit {
-            //         let color = color * shadow;
-            //         *pixel = rgb(color.x, color.y, color.z);
-            //     }
-            //     return;
-            // }
-            // let hit_fract = hit_point.fract();
-            // let color = color;
-            let color = rgb(color.x, color.y, color.z);
-            *pixel = color;
         });
     }
     let elapsed = start.elapsed();
     println!("Rendered {size} image in {elapsed:.3?}");
 
     use image::*;
-    // let mut dynimg = DynamicImage::ImageRgb8(img);
-    // let resized = dynimg.resize_exact(size.width/2, size.height/2, imageops::FilterType::Gaussian);
-    // resized.save("raycast.png").expect("Failed to save image.");
     if SSAA {
         let size = GridSize::new(size.width/2, size.height/2);
         println!("SSAA downscale to {size}");

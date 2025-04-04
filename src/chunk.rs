@@ -267,11 +267,6 @@ impl Chunk {
         );
 
         let mut cell = ray.pos.floor().as_ivec3();
-        // let coord = (
-        //     cell.x as u32,
-        //     cell.y as u32,
-        //     cell.z as u32,
-        // );
         if self.get(cell.x, cell.y, cell.z) {
             return Some(RayHit {
                 face: delta_min.map(|min| {
