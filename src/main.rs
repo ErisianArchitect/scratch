@@ -827,6 +827,7 @@ pub fn raycast_scene() {
             || true
             {
                 chunk.draw_box(r.start, r.end, true);
+                chunk.draw_box_reflection(r.start, r.end, true);
                 if false
                 || true
                 {
