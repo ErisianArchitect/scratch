@@ -638,9 +638,17 @@ impl TraceData {
         self.lighting.calculate(color, hit_normal, light_hit.is_some())
     }
 
+    pub fn calc_color_before_reflections_no_diffuse(&self, hit_point: Vec3A, hit_normal: Vec3A) -> Vec3A {
+        let color = Vec3A::ONE;
+        let light_ray = Ray3::new(hit_point, self.lighting.directional.inv_dir);
+        let light_hit = self.chunk.raycast(light_ray, 100.0);
+        self.lighting.calculate(color, hit_normal, light_hit.is_some())
+    }
+
     pub fn trace_reflections(&self, ray: Ray3, near: f32, far: f32, steps: u16) -> Option<Vec3A> {
         let Some(hit) = self.chunk.raycast(ray, far) else {
-            return Some(self.sky_color(ray.dir));
+            return Some(Vec3A::ZERO);
+            // return Some(self.sky_color(ray.dir));
         };
         let Some(face) = hit.face else {
             return Some(Vec3A::X);
@@ -652,14 +660,16 @@ impl TraceData {
         let hit_normal = face.normal();
         let hit_fract = hit_point.fract();
         // let cube_color = self.pos_color.get(hit_point.floor() * 2.3);
-        // let checker = checkerboard(hit.coord.x, hit.coord.y, hit.coord.z);
-        // let checker_color = if checker || true {
-        //     Vec3A::ONE
-        // } else {
-        //     Vec3A::ZERO
-        // };
+        let checker = checkerboard(hit.coord.x, hit.coord.y, hit.coord.z);
+        let checker_color = if checker {
+            Vec3A::ONE
+        } else {
+            Vec3A::splat(0.3)
+        };
         // let mut diffuse = checker_color;
-        let mut diffuse = self.calc_color_before_reflections(hit_point, hit_normal);
+        // let mut diffuse = self.calc_color_before_reflections(hit_point, hit_normal);
+        let mut diffuse = self.calc_color_before_reflections_no_diffuse(hit_point, hit_normal);
+        diffuse = diffuse * checker_color;
         fn on_edge(x: f32, y: f32) -> bool {
             x < 0.05 || y < 0.05 || x >= 0.95 || y >= 0.95
         }
@@ -692,11 +702,16 @@ impl TraceData {
             color
         } else {
             self.sky_color(ray.dir.into())
+            // self.sky_color
         }
     }
 
     pub fn sky_color(&self, ray_dir: Vec3A) -> Vec3A {
-        self.lighting.ambient.apply(self.pos_color.get(ray_dir) * self.sky_color)
+        // let gray = self.pos_color.rsimp.get([ray_dir.x as f64 * 40.0, ray_dir.y as f64 * 40.0, ray_dir.z as f64 * 40.0]);
+        // let gray = gray * 0.5 + 0.5;
+        // self.lighting.ambient.apply(Vec3A::splat(gray as f32) * self.sky_color)
+        self.lighting.ambient.apply(self.pos_color.get_with_scale(ray_dir, 40.0) * self.sky_color)
+        // self.sky_color
     }
 }
 
@@ -750,7 +765,10 @@ pub fn raycast_scene() {
     };
     // let same = 1024*16;
     // let size = GridSize::new(same, same/2);
-    let mut cam = Camera::from_look_at(vec3a(-24.0, 70.0-12.0, 48.0), vec3a(32., 32.-12., 32.), 45.0f32.to_radians(), 1.0, 100.0, (size.width, size.height));
+    // favorite cam
+    // let mut cam = Camera::from_look_at(vec3a(-24.0, 70.0-12.0, 48.0), vec3a(32., 32.-12., 32.), 45.0f32.to_radians(), 1.0, 100.0, (size.width, size.height));
+    // 42.5, 33
+    let mut cam = Camera::from_look_at(vec3a(-24.0, 70.0-12.0, 48.0), vec3a(0., 42.5, 32.5), 45.0f32.to_radians(), 1.0, 100.0, (size.width, size.height));
     // let mut cam = Camera::from_look_at(vec3a(-24.0, 70.0-12.0, 64.0+24.0), vec3a(32., 32.-12., 32.), 90.0f32.to_radians(), 1.0, 100.0, (size.width, size.height));
     // let mut cam = Camera::from_look_at(vec3a(42.0, 7.0, 42.0), vec3a(32., 5., 32.), 90.0f32.to_radians(), 1.0, 100.0, (size.width, size.height));
     // let mut cam = Camera::from_look_at(vec3a(24.0, 24.0, 16.0), vec3a(32.0, 8.0, 32.0), 90.0f32.to_radians(), 1.0, 100.0, (size.width, size.height));
@@ -774,7 +792,8 @@ pub fn raycast_scene() {
                 factor: 0.2,
             },
         },
-        // sky_color: Vec3::splat(0.0),
+        // sky_color: Vec3A::splat(0.4),
+        // sky_color: Vec3A::splat(0.0),
         sky_color: Vec3A::splat(1.0),
         reflection: Reflection { reflectivity: 0.5 },
         reflection_steps: 5,
@@ -861,10 +880,20 @@ pub fn raycast_scene() {
         for y in 0..64/10 {
             for z in 0..64/10 {
                 for x in 0..64/10 {
-                    boxes((x * 10, y * 10, z * 10), &mut trace.chunk);
+                    let mut r = box_at((x * 10, y * 10, z * 10));
+                    trace.chunk.draw_box(r.start, r.end, true);
+                    let end = (r.end.0, r.start.1 + 1, r.end.2);
+                    trace.chunk.fill_box(r.start, end, true);
+                    if x == 0 {
+                        trace.chunk.fill_box_reflection(r.start, end, true);
+                        trace.chunk.draw_box_reflection(r.start, r.end, true);
+                    }
+                    // boxes((x * 10, y * 10, z * 10), &mut trace.chunk);
                 }
             }
         }
+        trace.chunk.set(2, 41, 32, true);
+        // trace.chunk.set_reflection(2, 41, 32, true);
         let elapsed = start.elapsed();
         println!("Placed blocks in {elapsed:.3?}");
     });
