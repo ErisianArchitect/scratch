@@ -706,7 +706,7 @@ pub fn raycast_scene() {
     use scratch::perlin::perlin;
     use rayon::prelude::*;
     use noise::OpenSimplex;
-    const SSAA: bool = true;
+    const SSAA: bool = false;
     println!("Starting.");
     const SEED: u32 = 1205912;
     // let simplex = OpenSimplex::new(SEED);
@@ -723,7 +723,7 @@ pub fn raycast_scene() {
     let perm = Permutation::from_seed(make_seed(SEED as u64));
     // let size = GridSize::new(1280, 720);
     // let size = GridSize::new(1920, 1080);
-    let size = GridSize::new(1920*4, 1080*4);
+    let size = GridSize::new(1920, 1080);
     // let size = GridSize::new(2048, 2048);
     let size = if SSAA {
         GridSize::new(size.width * 2, size.height * 2)
