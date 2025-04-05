@@ -1,12 +1,12 @@
 #![allow(unused)]
-use std::{borrow::Borrow, collections::{HashMap, VecDeque}, sync::{atomic::AtomicU64, Arc, Mutex}, time::{Duration, Instant}};
+use std::{borrow::Borrow, collections::{HashMap, VecDeque}, path::PathBuf, sync::{atomic::AtomicU64, Arc, Mutex}, time::{Duration, Instant}};
 
 use glam::*;
 use image::{Rgb, RgbImage, Rgba, RgbaImage};
 use itertools::Itertools;
 use noise::{NoiseFn, OpenSimplex};
 use rand::{rngs::StdRng, Rng, SeedableRng};
-use scratch::{camera::Camera, chunk::{self, Chunk, RayHit}, dag::*, diff_plot::DiffPlot, math::Face, open_simplex::open_simplex_2d, perlin::{make_seed, Permutation}, ray::Ray3, tracegrid::{GridSize, TraceGrid}};
+use scratch::{camera::Camera, chunk::{self, Chunk, RayHit}, cubemap::Cubemap, dag::*, diff_plot::DiffPlot, math::{self, Face}, open_simplex::open_simplex_2d, perlin::{make_seed, Permutation}, ray::Ray3, tracegrid::{GridSize, TraceGrid}};
 use sha2::digest::typenum::Diff;
 
 macro_rules! count_ids {
@@ -377,49 +377,49 @@ fn rot_dir(dir: Vec3, rot: Vec2) -> Vec3 {
 fn glam_test() {
     use glam::*;
 
-    let x = -0.73;
-    let y = -0.5;
-    let fov = 45f32.to_radians();
-    let aspect_ratio = 1920.0 / 1080.0;
+    // let x = -0.73;
+    // let y = -0.5;
+    // let fov = 45f32.to_radians();
+    // let aspect_ratio = 1920.0 / 1080.0;
 
-    let tan_fov_half = (fov * 0.5).tan();
-    let asp_fov = aspect_ratio * tan_fov_half;
+    // let tan_fov_half = (fov * 0.5).tan();
+    // let asp_fov = aspect_ratio * tan_fov_half;
 
-    let nx = x * asp_fov;
-    let ny = -y * tan_fov_half;
-    // (forward + nx * right + ny * up).normalize()
-    let ray_dir = vec3(nx, ny, -1.0).normalize();
+    // let nx = x * asp_fov;
+    // let ny = -y * tan_fov_half;
+    // // (forward + nx * right + ny * up).normalize()
+    // let ray_dir = vec3(nx, ny, -1.0).normalize();
 
-    let cam = Camera::from_look_to(Vec3::ZERO, Vec3::NEG_Z, 45f32.to_radians(), 1.0, 100.0, (1920, 1080));
+    // let cam = Camera::from_look_to(Vec3A::ZERO, Vec3A::NEG_Z, 45f32.to_radians(), 1.0, 100.0, (1920, 1080));
 
-    let cam_dir = cam.normalized_screen_to_ray(vec2(x, y));
+    // let cam_dir = cam.normalized_screen_to_ray(vec2(x, y));
 
-    let dot = ray_dir.dot(cam_dir.dir);
-    println!("Dot: {dot:.5}");
+    // let dot = ray_dir.dot(cam_dir.dir);
+    // println!("Dot: {dot:.5}");
 
-    let angle = 90f32.to_radians();
-    let s = angle.sin();
-    let c = angle.cos();
-    let unrot = vec2(0.0, 1.0);
-    let rot = vec2(
-        unrot.x * c - unrot.y * s,
-        unrot.x * s + unrot.y * c,
-    );
-    let left = vec2(-1.0, 0.0);
-    let dot = rot.dot(left);
+    // let angle = 90f32.to_radians();
+    // let s = angle.sin();
+    // let c = angle.cos();
+    // let unrot = vec2(0.0, 1.0);
+    // let rot = vec2(
+    //     unrot.x * c - unrot.y * s,
+    //     unrot.x * s + unrot.y * c,
+    // );
+    // let left = vec2(-1.0, 0.0);
+    // let dot = rot.dot(left);
     
-    println!("{rot:?}\n{dot:.4?}");
-    println!("################################");
-    let rot = vec2(33.0f32.to_radians(), 12.0f32.to_radians());
-    let quaty = Quat::from_rotation_y(rot.y);
-    let quatx = Quat::from_rotation_x(rot.x);
-    let quat = quatx * quaty;
-    let quat = Quat::from_euler(EulerRot::YXZ, rot.y, rot.x, 0.0);
-    let dir = Vec3::NEG_Z;
-    let rot_dir1 = quat * dir;
-    let rot_dir2 = rot_dir(dir, vec2(rot.x, rot.y));
-    println!("Len1: {:.3}, Len2: {:.3}", rot_dir1.length(), rot_dir2.length());
-    println!("Rot Dot: {}", rot_dir1.dot(rot_dir2));
+    // println!("{rot:?}\n{dot:.4?}");
+    // println!("################################");
+    // let rot = vec2(33.0f32.to_radians(), 12.0f32.to_radians());
+    // let quaty = Quat::from_rotation_y(rot.y);
+    // let quatx = Quat::from_rotation_x(rot.x);
+    // let quat = quatx * quaty;
+    // let quat = Quat::from_euler(EulerRot::YXZ, rot.y, rot.x, 0.0);
+    // let dir = Vec3::NEG_Z;
+    // let rot_dir1 = quat * dir;
+    // let rot_dir2 = rot_dir(dir, vec2(rot.x, rot.y));
+    // println!("Len1: {:.3}, Len2: {:.3}", rot_dir1.length(), rot_dir2.length());
+    // println!("Rot Dot: {}", rot_dir1.dot(rot_dir2));
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -437,9 +437,9 @@ impl RayCalc {
         }
     }
 
-    pub fn calc_ray_dir(self, ndc: Vec2) -> Vec3 {
+    pub fn calc_ray_dir(self, ndc: Vec2) -> Vec3A {
         let m = ndc * self.mult;
-        vec3(m.x, m.y, -1.0).normalize()
+        vec3a(m.x, m.y, -1.0).normalize()
     }
 }
 
@@ -488,23 +488,23 @@ struct PosColor {
 }
 
 impl PosColor {
-    pub fn get_with_scale(&self, pos: Vec3, scale: f64) -> Vec3 {
+    pub fn get_with_scale(&self, pos: Vec3A, scale: f64) -> Vec3A {
         let pos_arr = [pos.x as f64 * scale, pos.y as f64 * scale, pos.z as f64 * scale];
         let r: f64 = self.rsimp.get(pos_arr) * 0.5 + 0.5;
         let g: f64 = self.gsimp.get(pos_arr) * 0.5 + 0.5;
         let b: f64 = self.bsimp.get(pos_arr) * 0.5 + 0.5;
-        vec3(r as f32, g as f32, b as f32)
+        vec3a(r as f32, g as f32, b as f32)
     }
 
-    pub fn get(&self, pos: Vec3) -> Vec3 {
-        // Vec3::ONE
+    pub fn get(&self, pos: Vec3A) -> Vec3A {
+        // return Vec3A::ONE;
         // Vec3::Y
 
         let pos_arr = [pos.x as f64 * self.scale, pos.y as f64 * self.scale, pos.z as f64 * self.scale];
         let r: f64 = self.rsimp.get(pos_arr) * 0.5 + 0.5;
         let g: f64 = self.gsimp.get(pos_arr) * 0.5 + 0.5;
         let b: f64 = self.bsimp.get(pos_arr) * 0.5 + 0.5;
-        vec3(r as f32, g as f32, b as f32)
+        vec3a(r as f32, g as f32, b as f32)
     }
 
 }
@@ -523,15 +523,15 @@ fn rgb(r: f32, g: f32, b: f32) -> Rgb<u8> {
 
 #[derive(Debug, Clone, Copy)]
 pub struct DirectionalLight {
-    pub direction: Vec3,
-    pub color: Vec3,
+    pub direction: Vec3A,
+    pub color: Vec3A,
     pub intensity: f32,
-    pub pre_calc: Vec3,
-    pub inv_dir: Vec3,
+    pub pre_calc: Vec3A,
+    pub inv_dir: Vec3A,
 }
 
 impl DirectionalLight {
-    pub fn new(direction: Vec3, color: Vec3, intensity: f32) -> Self {
+    pub fn new(direction: Vec3A, color: Vec3A, intensity: f32) -> Self {
         Self {
             direction,
             color,
@@ -541,7 +541,7 @@ impl DirectionalLight {
         }
     }
     #[inline(always)]
-    pub fn apply(&self, color: Vec3, normal: Vec3) -> Vec3 {
+    pub fn apply(&self, color: Vec3A, normal: Vec3A) -> Vec3A {
         let dot = self.inv_dir.dot(normal);
         (color * self.pre_calc) * dot
     }
@@ -554,37 +554,21 @@ pub struct Shadow {
 
 impl Shadow {
     #[inline(always)]
-    pub fn apply(self, color: Vec3) -> Vec3 {
+    pub fn apply(self, color: Vec3A) -> Vec3A {
         color * self.factor
-    }
-}
-
-impl std::ops::Mul<Vec3> for Shadow {
-    type Output = Vec3;
-    #[inline(always)]
-    fn mul(self, rhs: Vec3) -> Self::Output {
-        self.apply(rhs)
     }
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct AmbientLight {
-    pub color: Vec3,
+    pub color: Vec3A,
     pub intensity: f32,
 }
 
 impl AmbientLight {
     #[inline(always)]
-    pub fn apply(self, color: Vec3) -> Vec3 {
+    pub fn apply(self, color: Vec3A) -> Vec3A {
         self.color * color
-    }
-}
-
-impl std::ops::Mul<Vec3> for AmbientLight {
-    type Output = Vec3;
-    #[inline(always)]
-    fn mul(self, rhs: Vec3) -> Self::Output {
-        self.apply(rhs)
     }
 }
 
@@ -596,14 +580,14 @@ pub struct Lighting {
 
 impl Lighting {
     #[inline(always)]
-    pub fn calculate(&self, color: Vec3, normal: Vec3, occluded: bool) -> Vec3 {
+    pub fn calculate(&self, color: Vec3A, normal: Vec3A, occluded: bool) -> Vec3A {
         let ambient = self.ambient.color;
         let directional = self.directional.inv_dir.dot(normal);
         let directional_color = self.directional.pre_calc * directional;
         let light = ((1.0 - directional) * self.ambient.intensity) * ambient + directional_color;
         let color = color * light;
         if occluded {
-            self.shadow * color
+            self.shadow.apply(color)
         } else {
             color
         }
@@ -616,12 +600,12 @@ pub struct Reflection {
 }
 
 #[inline(always)]
-fn reflect(ray_dir: Vec3, normal: Vec3) -> Vec3 {
+fn reflect(ray_dir: Vec3A, normal: Vec3A) -> Vec3A {
     ray_dir - 2.0 * (ray_dir * normal) * normal
 }
 
 #[inline(always)]
-fn combine_reflection(reflectivity: f32, diffuse: Vec3, reflection: Vec3) -> Vec3 {
+fn combine_reflection(reflectivity: f32, diffuse: Vec3A, reflection: Vec3A) -> Vec3A {
     reflectivity * reflection + (1.0 - reflectivity) * diffuse
 }
 
@@ -629,8 +613,8 @@ impl Reflection {
     #[inline(always)]
     pub fn calculate(
         self,
-        surface_normal: Vec3,
-        view_dir: Vec3,
+        surface_normal: Vec3A,
+        view_dir: Vec3A,
     ) -> f32 {
         let dot = (-view_dir).dot(surface_normal).max(0.0);
         self.reflectivity + (1.0 - self.reflectivity) * (1.0 - dot).powf(5.0)
@@ -639,69 +623,124 @@ impl Reflection {
 
 pub struct TraceData {
     chunk: Chunk,
+    skybox: Cubemap,
     pos_color: PosColor,
     lighting: Lighting,
-    sky_color: Vec3,
+    sky_color: Vec3A,
     reflection: Reflection,
     reflection_steps: u16,
 }
 
 impl TraceData {
-    pub fn calc_color_before_reflections(&self, hit_point: Vec3, hit_normal: Vec3) -> Vec3 {
+    pub fn calc_color_before_reflections(&self, hit_point: Vec3A, hit_normal: Vec3A) -> Vec3A {
         let color = self.pos_color.get(hit_point);
         let light_ray = Ray3::new(hit_point, self.lighting.directional.inv_dir);
         let light_hit = self.chunk.raycast(light_ray, 100.0);
         self.lighting.calculate(color, hit_normal, light_hit.is_some())
     }
 
-    pub fn trace_reflections(&self, ray: Ray3, near: f32, far: f32, steps: u16) -> Option<Vec3> {
+    pub fn calc_color_before_reflections_no_diffuse(&self, hit_point: Vec3A, hit_normal: Vec3A) -> Vec3A {
+        let color = Vec3A::ONE;
+        let light_ray = Ray3::new(hit_point, self.lighting.directional.inv_dir);
+        let light_hit = self.chunk.raycast(light_ray, 100.0);
+        self.lighting.calculate(color, hit_normal, light_hit.is_some())
+    }
+
+    pub fn trace_reflections(&self, ray: Ray3, near: f32, far: f32, steps: u16) -> Option<Vec3A> {
         let Some(hit) = self.chunk.raycast(ray, far) else {
+            // return Some(Vec3A::ZERO);
             return Some(self.sky_color(ray.dir));
         };
         let Some(face) = hit.face else {
-            return Some(Vec3::X);
+            return Some(Vec3A::X);
         };
         if hit.distance < near {
-            return Some(Vec3::Y);
+            return Some(Vec3A::Y);
         }
         let hit_point = hit.get_hit_point(ray, face);
         let hit_normal = face.normal();
+        let hit_fract = hit_point.fract();
+        // let cube_color = self.pos_color.get(hit_point.floor() * 2.3);
+        let checker = checkerboard(hit.coord.x, hit.coord.y, hit.coord.z);
+        let checker_color = if checker {
+            Vec3A::ONE
+        } else {
+            Vec3A::splat(0.3)
+        };
+        // let mut diffuse = checker_color;
         let mut diffuse = self.calc_color_before_reflections(hit_point, hit_normal);
+        // let mut diffuse = self.calc_color_before_reflections_no_diffuse(hit_point, hit_normal);
+        diffuse = diffuse * checker_color;
         fn on_edge(x: f32, y: f32) -> bool {
             x < 0.05 || y < 0.05 || x >= 0.95 || y >= 0.95
         }
-        let hit_fract = hit_point.fract();
-        match face {
-            Face::PosX | Face::NegX if on_edge(hit_fract.y, hit_fract.z) => diffuse = diffuse * 0.1,
-            Face::PosY | Face::NegY if on_edge(hit_fract.x, hit_fract.z) => diffuse = diffuse * 0.1,
-            Face::PosZ | Face::NegZ if on_edge(hit_fract.x, hit_fract.y) => diffuse = diffuse * 0.1,
-            _ => (),
+        // diffuse = Vec3A::ONE;
+        // match face {
+        //     Face::PosX | Face::NegX if on_edge(hit_fract.y, hit_fract.z) => diffuse = diffuse * 0.1,
+        //     Face::PosY | Face::NegY if on_edge(hit_fract.x, hit_fract.z) => diffuse = diffuse * 0.1,
+        //     Face::PosZ | Face::NegZ if on_edge(hit_fract.x, hit_fract.y) => diffuse = diffuse * 0.1,
+        //     _ => (),
+        // }
+        if steps > 1 && self.chunk.get_reflection(hit.coord.x, hit.coord.y, hit.coord.z) {
+            // diffuse = Vec3A::ONE;
+            let reflect_dir = reflect(ray.dir, hit_normal);
+            let reflect_ray = Ray3::new(hit_point, reflect_dir);
+            let reflectivity = self.reflection.calculate(hit_normal, ray.dir);
+            let Some(reflection) = self.trace_reflections(reflect_ray, 0.0, far - hit.distance, steps - 1) else {
+                // return Some(combine_reflection(reflectivity, diffuse, self.sky_color(reflect_dir)));
+                return Some(diffuse);
+            };
+            let final_color = combine_reflection(reflectivity, diffuse, reflection);
+            Some(final_color)
+        } else {
+            match face {
+                Face::PosX | Face::NegX if on_edge(hit_fract.y, hit_fract.z) => diffuse = diffuse * 0.1,
+                Face::PosY | Face::NegY if on_edge(hit_fract.x, hit_fract.z) => diffuse = diffuse * 0.1,
+                Face::PosZ | Face::NegZ if on_edge(hit_fract.x, hit_fract.y) => diffuse = diffuse * 0.1,
+                _ => (),
+            }
+            Some(diffuse)
+            // Some(diffuse * Vec3A::splat(0.4))
         }
-        if steps == 1 {
-            return Some(diffuse);
-        }
-        let reflect_dir = reflect(ray.dir, hit_normal);
-        let reflect_ray = Ray3::new(hit_point, reflect_dir);
-        let reflectivity = self.reflection.calculate(hit_normal, ray.dir);
-        let Some(reflection) = self.trace_reflections(reflect_ray, 0.0, far - hit.distance, steps - 1) else {
-            // return Some(combine_reflection(reflectivity, diffuse, self.sky_color(reflect_dir)));
-            return Some(diffuse);
-        };
-        let final_color = combine_reflection(reflectivity, diffuse, reflection);
-        Some(final_color)
     }
 
-    pub fn trace_color(&self, ray: Ray3, near: f32, far: f32) -> Vec3 {
+    pub fn trace_color(&self, ray: Ray3, near: f32, far: f32) -> Vec3A {
         if let Some(color) = self.trace_reflections(ray, near, far, self.reflection_steps) {
             color
         } else {
             self.sky_color(ray.dir)
+            // self.sky_color
         }
     }
 
-    pub fn sky_color(&self, ray_dir: Vec3) -> Vec3 {
-        self.lighting.ambient.apply(self.pos_color.get(ray_dir) * self.sky_color)
+    pub fn sky_color(&self, ray_dir: Vec3A) -> Vec3A {
+        // let gray = self.pos_color.rsimp.get([ray_dir.x as f64 * 40.0, ray_dir.y as f64 * 40.0, ray_dir.z as f64 * 40.0]);
+        // let gray = gray * 0.5 + 0.5;
+        // self.lighting.ambient.apply(Vec3A::splat(gray as f32) * self.sky_color)
+        let rgb = self.skybox.sample_dir(ray_dir);
+        let color = vec3a(
+            math::byte_scalar(rgb.0[0]),
+            math::byte_scalar(rgb.0[1]),
+            math::byte_scalar(rgb.0[2]),
+        );
+        self.lighting.ambient.apply(color * self.sky_color)
+        // self.sky_color
     }
+}
+
+#[test]
+fn testit() {
+    let v = 1.24523f32;
+    let c = v.clamp(0.0, 10.0);
+    if c != v {
+        println!("Changed")
+    } else {
+        println!("Same")
+    }
+}
+
+fn checkerboard(x: i32, y: i32, z: i32) -> bool {
+    ((x & 1) ^ (y & 1) ^ (z & 1)) != 0
 }
 
 pub fn raycast_scene() {
@@ -711,8 +750,29 @@ pub fn raycast_scene() {
     use scratch::perlin::perlin;
     use rayon::prelude::*;
     use noise::OpenSimplex;
+    use scratch::cubemap::*;
     const SSAA: bool = true;
     println!("Starting.");
+    let start = Instant::now();
+    let skybox = {
+        let directory = PathBuf::from("./assets/textures/skybox_001/");
+        let top_path = directory.join("purp_top.png");
+        let bottom_path = directory.join("purp_bottom.png");
+        let left_path = directory.join("purp_left.png");
+        let right_path = directory.join("purp_right.png");
+        let front_path = directory.join("purp_front.png");
+        let back_path = directory.join("purp_back.png");
+        let pos_x = read_texture(right_path).unwrap();
+        let pos_y = read_texture(top_path).unwrap();
+        let pos_z = read_texture(back_path).unwrap();
+        let neg_x = read_texture(left_path).unwrap();
+        let neg_y = read_texture(bottom_path).unwrap();
+        let neg_z = read_texture(front_path).unwrap();
+    
+        Cubemap::new(pos_x, pos_y, pos_z, neg_x, neg_y, neg_z)
+    };
+    let elapsed = start.elapsed();
+    println!("Loaded Cubemap in {elapsed:.3?}");
     const SEED: u32 = 1205912;
     // let simplex = OpenSimplex::new(SEED);
     let rsimp = OpenSimplex::new(SEED + 0);
@@ -726,11 +786,12 @@ pub fn raycast_scene() {
         scale: 1.0,
     };
     let perm = Permutation::from_seed(make_seed(SEED as u64));
+    // let size = GridSize::new(512, 512);
+    // let size = GridSize::new(2048, 2048);
     // let size = GridSize::new(1280, 720);
     // let size = GridSize::new(1920, 1080);
     let size = GridSize::new(1920*2, 1080*2);
     // let size = GridSize::new(1920*4, 1080*4);
-    // let size = GridSize::new(2048, 2048);
     let size = if SSAA {
         GridSize::new(size.width * 2, size.height * 2)
     } else {
@@ -738,37 +799,42 @@ pub fn raycast_scene() {
     };
     // let same = 1024*16;
     // let size = GridSize::new(same, same/2);
-    let mut cam = Camera::from_look_at(vec3(-24.0, 70.0-12.0, 48.0), vec3(32., 32.-12., 32.), 45.0f32.to_radians(), 1.0, 100.0, (size.width, size.height));
-    // let mut cam = Camera::from_look_at(vec3(-24.0, 70.0-12.0, 64.0+24.0), vec3(32., 32.-12., 32.), 90.0f32.to_radians(), 1.0, 100.0, (size.width, size.height));
-    // let mut cam = Camera::from_look_at(vec3(24.0, 24.0, 16.0), vec3(32.0, 8.0, 32.0), 90.0f32.to_radians(), 1.0, 100.0, (size.width, size.height));
-
+    // favorite cam
+    // let mut cam = Camera::from_look_at(vec3a(-24.0, 70.0-12.0, 48.0), vec3a(32., 32.-12., 32.), 45.0f32.to_radians(), 1.0, 100.0, (size.width, size.height));
+    // 42.5, 33
+    // let mut cam = Camera::from_look_at(vec3a(-24.0, 70.0-2.0, 48.0+20.0), vec3a(0., 42.5+10.0, 32.5+20.0), 45.0f32.to_radians(), 1.0, 100.0, (size.width, size.height));
+    let mut cam = Camera::from_look_at(vec3a(-24.0, 70.0-12.0, 48.0+10.0), vec3a(0., 42.5, 32.5+10.0), 90.0f32.to_radians(), 1.0, 100.0, (size.width, size.height));
+    // let mut cam = Camera::from_look_at(vec3a(-24.0, 70.0-12.0, 64.0+24.0), vec3a(32., 32.-12., 32.), 90.0f32.to_radians(), 1.0, 100.0, (size.width, size.height));
+    // let mut cam = Camera::from_look_at(vec3a(42.0, 7.0, 42.0), vec3a(32., 5., 32.), 90.0f32.to_radians(), 1.0, 100.0, (size.width, size.height));
+    // let mut cam = Camera::from_look_at(vec3a(24.0, 24.0, 16.0), vec3a(32.0, 8.0, 32.0), 90.0f32.to_radians(), 1.0, 100.0, (size.width, size.height));
+    // cam.look_at(vec3a(0., 1000., 0.));
     let mut last = IVec3::ZERO;
     let mut chunk = Chunk::new();
     let mut trace = TraceData {
         chunk,
+        skybox,
         pos_color,
         lighting: Lighting {
             directional: DirectionalLight::new(
-                vec3(0.5, -1.0, -1.0).normalize(),
-                vec3(1.0, 1.0, 1.0),
+                vec3a(0.5, -1.0, -1.0).normalize(),
+                vec3a(1.0, 1.0, 1.0),
                 0.5,
             ),
             ambient: AmbientLight {
-                color: vec3(1.0, 1.0, 1.0),
+                color: vec3a(1.0, 1.0, 1.0),
                 intensity: 1.0,
             },
             shadow: Shadow {
                 factor: 0.2,
             },
         },
-        // sky_color: Vec3::splat(0.0),
-        sky_color: Vec3::splat(1.0),
+        // sky_color: Vec3A::splat(0.4),
+        // sky_color: Vec3A::splat(0.0),
+        sky_color: Vec3A::splat(2.0),
         reflection: Reflection { reflectivity: 0.5 },
+        // reflection: Reflection { reflectivity: 1.0 },
         reflection_steps: 5,
     };
-    fn checkerboard(x: i32, y: i32, z: i32) -> bool {
-        ((x & 1) ^ (y & 1) ^ (z & 1)) != 0
-    }
     let start = Instant::now();
     let ray_calc = RayCalc::new(cam.fov, cam.screen_size);
     let cam_pos = cam.position;
@@ -781,22 +847,11 @@ pub fn raycast_scene() {
         let wh = vec2(size.width as f32, size.height as f32);
         let hs = vec2(0.5, 0.5);
         let screen_pos = (xy / wh) - hs;
-        // let screen_pos = vec2(x as f32 / size.width as f32 - 0.5, y as f32 / size.height as f32 - 0.5);
-        // cam_ref.normalized_screen_to_ray(screen_pos).dir
         let dir = ray_calc.calc_ray_dir(screen_pos);
         cam_rot * dir
-        // rot_dir(dir, cam_rot)
     }).collect::<Vec<_>>();
     let elapsed = start.elapsed();
     println!("Calculated {} rays in {elapsed:.3?}", rays.len());
-
-    // for x in 0..64 {
-    //     for z in 0..64 {
-    //         for y in 0..64 {
-    //             chunk.set(x, y, z, checkerboard(x, y, z));
-    //         }
-    //     }
-    // }
 
     code_toggle!([] {
         let start = Instant::now();
@@ -814,51 +869,6 @@ pub fn raycast_scene() {
         let elapsed = start.elapsed();
         println!("Generated terrain in {elapsed:.3?}");
     });
-    // for x in 0i32..64 {
-    //     for y in 0i32..64 {
-    //         for z in 0i32..64 {
-    //             let ox = (32 - x).abs();
-    //             let oy = (32 - y).abs();
-    //             let oz = (32 - z).abs();
-    //             let ods = ((ox + 7) * (ox + 7)) + ((oy + 7) * (oy + 7)) + oz * oz;
-    //             if ods <= DS {
-    //                 chunk.set(x as u32, y as u32, z as u32, true);
-    //             }
-    //             // let mut c = 0;
-    //             // if x % 8 == 0 {
-    //             //     c += 1;
-    //             // }
-    //             // if y % 8 == 0 {
-    //             //     c += 1;
-    //             // }
-    //             // if z % 8 == 0 {
-    //             //     c += 1;
-    //             // }
-    //             // if c > 1 {
-    //             //     chunk.set(x, y, z, true);
-    //             // }
-    //         }
-    //     }
-    // }
-
-    // for x in 0..64 {
-    //     for y in 0..64 {
-    //         for z in 0..64 {
-    //             chunk.set(x, y, z, true);
-    //         }
-    //     }
-    // }
-    // let line_width = 4;
-    // chunk.fill_box((16, 16, 16), (48, 48, 48), true);
-    // chunk.fill_box((16, 16 + line_width, 16 + line_width), (48, 48 - line_width, 48 - line_width), false);
-    // chunk.fill_box((16 + line_width, 16, 16 + line_width), (48 - line_width, 48, 48 - line_width), false);
-    // chunk.fill_box((16 + line_width, 16 + line_width, 16), (48 - line_width, 48 - line_width, 48), false);
-
-    // chunk.draw_box((16, 16, 16), (48, 48, 48), true);
-    // chunk.draw_box((20, 20, 20), (44, 44, 44), true);
-    // chunk.draw_box((24, 24, 24), (40, 40, 40), true);
-    // chunk.draw_box((28, 28, 28), (36, 36, 36), true);
-    // 10202010102020101020201
     fn box_at(start: (i32, i32, i32)) -> std::ops::Range<(i32, i32, i32)> {
         start..(start.0 + 6, start.1 + 6, start.2 + 6)
     }
@@ -873,11 +883,13 @@ pub fn raycast_scene() {
             || true
             {
                 chunk.draw_box(r.start, r.end, true);
+                chunk.draw_box_reflection(r.start, r.end, true);
                 if false
                 || true
                 {
                     let end = (r.end.0, r.start.1 + 1, r.end.2);
                     chunk.fill_box(r.start, end, true);
+                    chunk.fill_box_reflection(r.start, end, true);
                     // let m = 1;
                     // let start = (
                     //     r.start.0 + m, r.start.1 + m, r.start.2 + m
@@ -905,12 +917,68 @@ pub fn raycast_scene() {
         for y in 0..64/10 {
             for z in 0..64/10 {
                 for x in 0..64/10 {
-                    boxes((x * 10, y * 10, z * 10), &mut trace.chunk);
+                    let mut r = box_at((x * 10, y * 10, z * 10));
+                    trace.chunk.draw_box(r.start, r.end, true);
+                    let end = (r.end.0, r.start.1 + 1, r.end.2);
+                    trace.chunk.fill_box(r.start, end, true);
+                    if (x == 0 || z == 5) {
+                        trace.chunk.fill_box_reflection(r.start, end, true);
+                        // trace.chunk.draw_box_reflection(r.start, r.end, false);
+                    }
+                    // boxes((x * 10, y * 10, z * 10), &mut trace.chunk);
                 }
             }
         }
+        // trace.chunk.set(2, 41+10, 32+20, true);
+        // trace.chunk.set_reflection(2, 41+10, 32+20, true);
+        trace.chunk.set(2, 41, 32+10, true);
+        // trace.chunk.set_reflection(2, 41, 32, true);
         let elapsed = start.elapsed();
+        code_toggle!([r] {
+
+        });
+        trace.chunk.fill_box((0, 46, 0), (64, 64, 64), false);
+        let st = 56/2 - 4;
+        let en = st + 8;
+        let b = 45;
+        let t = b + 8;
+        trace.chunk.draw_box((st, b, st), (en, t, en), true);
+        trace.chunk.fill_box((0, 45, 0), (56, 46, 56), true);
+        trace.chunk.fill_box_reflection((0, 45, 0), (56, 46, 56), true);
         println!("Placed blocks in {elapsed:.3?}");
+    });
+    // Apartments
+    code_toggle!([] {
+        for z in 0..16 {
+            for x in 0..16 {
+                for y in 0..16 {
+                    let start = ivec3(x * 4, y * 4, z * 4);
+                    let end = start + ivec3(4, 1, 4);
+                    trace.chunk.fill_box((start.x, start.y, start.z), (end.x, end.y, end.z), true);
+                    trace.chunk.fill_box_reflection((start.x+1, start.y, start.z+1), (end.x, end.y, end.z), true);
+                    trace.chunk.fill_box((start.x, start.y + 1, start.z), (start.x+1, start.y + 4, start.z+1), true);
+                    // trace.chunk.fill_box_reflection((start.x, start.y + 1, start.z), (start.x+1, start.y + 4, start.z+1), true);
+                }
+            }
+        }
+    });
+    code_toggle!([r] {
+        for z in 0..64 {
+            for x in 0..64 {
+                for y in 0..64 {
+                    // let present = trace.chunk.get(x, y, z);
+                    // if present && checkerboard(x, y, z) {
+                    // }
+                    trace.chunk.set_reflection(x, y, z, true);
+                }
+            }
+        }
+        let st = 56/2 - 4;
+        let en = st + 8;
+        let b = 46;
+        let t = b + 7;
+        trace.chunk.fill_box_reflection((st, b, st), (en, t, en), false);
+        trace.chunk.set_reflection(2, 41, 32+10, false);
     });
     code_toggle!([] {
         const HELLO: [&'static str; 5] = [
@@ -933,6 +1001,13 @@ pub fn raycast_scene() {
         }
     });
 
+    // Reflection scene
+    code_toggle!([] {
+        trace.chunk.fill_box((0, 0, 0), (64, 2, 64), true);
+        trace.chunk.fill_box_reflection((26, 0, 26), (38, 2, 38), true);
+        trace.chunk.fill_box((31, 4, 31), (33, 6, 33), true);
+        trace.chunk.fill_box_reflection((31, 4, 31), (33, 6, 33), true);
+    });
 
     code_toggle!([] {
         boxes((0, 0, 0), &mut trace.chunk);

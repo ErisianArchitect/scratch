@@ -1,15 +1,15 @@
 use glam::{
-    vec2, Mat3, Mat4, Quat, Vec2, Vec3, Vec4, Vec4Swizzles
+    vec2, Mat3, Mat4, Quat, Vec2, Vec3, Vec3A, Vec4, Vec4Swizzles
 };
 
 use crate::ray::Ray3;
 
-pub fn rotation_from_look_at(position: Vec3, target: Vec3) -> Vec2 {
+pub fn rotation_from_look_at(position: Vec3A, target: Vec3A) -> Vec2 {
     let dir = (target - position).normalize();
     rotation_from_direction(dir)
 }
 
-pub fn rotation_from_direction(direction: Vec3) -> Vec2 {
+pub fn rotation_from_direction(direction: Vec3A) -> Vec2 {
     let yaw = (-direction.x).atan2(-direction.z);
     let pitch = direction.y.asin();
     vec2(pitch, yaw)
@@ -27,7 +27,7 @@ pub enum MoveType {
 
 #[derive(Debug, Clone)]
 pub struct Camera {
-    pub position: Vec3,
+    pub position: Vec3A,
     pub rotation: Vec2,
     pub fov: f32,
     pub aspect_ratio: f32,
@@ -42,7 +42,7 @@ const fn aspect_ratio(size: (u32, u32)) -> f32 {
 
 impl Camera {
     pub fn new(
-        position: Vec3,
+        position: Vec3A,
         rotation: Vec2,
         fov: f32,
         z_near: f32,
@@ -62,7 +62,7 @@ impl Camera {
 
     /// Creates an unrotated camera at the given position.
     pub fn at(
-        position: Vec3,
+        position: Vec3A,
         fov: f32,
         z_near: f32,
         z_far: f32,
@@ -80,8 +80,8 @@ impl Camera {
     }
 
     pub fn from_look_at(
-        position: Vec3,
-        target: Vec3,
+        position: Vec3A,
+        target: Vec3A,
         fov: f32,
         z_near: f32,
         z_far: f32,
@@ -101,8 +101,8 @@ impl Camera {
 
     /// `look_to` means to point in the same direction as the given `direction` vector.
     pub fn from_look_to(
-        position: Vec3,
-        direction: Vec3,
+        position: Vec3A,
+        direction: Vec3A,
         fov: f32,
         z_near: f32,
         z_far: f32,
@@ -125,50 +125,50 @@ impl Camera {
         self.aspect_ratio = aspect_ratio(size);
     }
 
-    pub fn rotate_vec(&self, v: Vec3) -> Vec3 {
+    pub fn rotate_vec(&self, v: Vec3A) -> Vec3A {
         let rot = self.quat();
         rot * v
     }
 
     /// Rotates vector around the Y axis.
-    pub fn rotate_vec_y(&self, v: Vec3) -> Vec3 {
+    pub fn rotate_vec_y(&self, v: Vec3A) -> Vec3A {
         let rot = self.y_quat();
         rot * v
     }
 
-    pub fn up(&self) -> Vec3 {
-        self.rotate_vec(Vec3::Y)
+    pub fn up(&self) -> Vec3A {
+        self.rotate_vec(Vec3A::Y)
     }
 
-    pub fn down(&self) -> Vec3 {
-        self.rotate_vec(Vec3::NEG_Y)
+    pub fn down(&self) -> Vec3A {
+        self.rotate_vec(Vec3A::NEG_Y)
     }
 
-    pub fn left(&self) -> Vec3 {
-        self.rotate_vec(Vec3::NEG_X)
+    pub fn left(&self) -> Vec3A {
+        self.rotate_vec(Vec3A::NEG_X)
     }
 
-    pub fn right(&self) -> Vec3 {
-        self.rotate_vec(Vec3::X)
+    pub fn right(&self) -> Vec3A {
+        self.rotate_vec(Vec3A::X)
     }
 
-    pub fn forward(&self) -> Vec3 {
-        self.rotate_vec(Vec3::NEG_Z)
+    pub fn forward(&self) -> Vec3A {
+        self.rotate_vec(Vec3A::NEG_Z)
     }
 
-    pub fn backward(&self) -> Vec3 {
-        self.rotate_vec(Vec3::Z)
+    pub fn backward(&self) -> Vec3A {
+        self.rotate_vec(Vec3A::Z)
     }
 
-    pub fn pan_forward(&self) -> Vec3 {
-        self.rotate_vec_y(Vec3::NEG_Z)
+    pub fn pan_forward(&self) -> Vec3A {
+        self.rotate_vec_y(Vec3A::NEG_Z)
     }
 
-    pub fn pan_backward(&self) -> Vec3 {
-        self.rotate_vec_y(Vec3::Z)
+    pub fn pan_backward(&self) -> Vec3A {
+        self.rotate_vec_y(Vec3A::Z)
     }
 
-    pub fn adv_move(&mut self, move_type: MoveType, translation: Vec3) {
+    pub fn adv_move(&mut self, move_type: MoveType, translation: Vec3A) {
         match move_type {
             MoveType::Absolute => self.translate(translation),
             MoveType::Free => self.translate_rotated(translation),
@@ -176,12 +176,12 @@ impl Camera {
         }
     }
 
-    pub fn translate(&mut self, translation: Vec3) {
+    pub fn translate(&mut self, translation: Vec3A) {
         self.position += translation;
     }
 
     /// Translates relative to camera rotation.
-    pub fn translate_rotated(&mut self, translation: Vec3) {
+    pub fn translate_rotated(&mut self, translation: Vec3A) {
         if translation.length_squared() > 0.000001 {
             let rot_quat = self.quat();
             let rot_offset = rot_quat * translation;
@@ -190,17 +190,17 @@ impl Camera {
     }
 
     /// For planar camera translation.
-    pub fn translate_planar(&mut self, translation: Vec3) {
+    pub fn translate_planar(&mut self, translation: Vec3A) {
         if translation.length_squared() > 0.000001 {
             self.translate(self.rotate_vec_y(translation))
         }
     }
 
-    pub fn look_at(&mut self, target: Vec3) {
+    pub fn look_at(&mut self, target: Vec3A) {
         self.rotation = rotation_from_look_at(self.position, target);
     }
 
-    pub fn look_to(&mut self, direction: Vec3) {
+    pub fn look_to(&mut self, direction: Vec3A) {
         self.rotation = rotation_from_direction(direction);
     }
 
@@ -237,7 +237,7 @@ impl Camera {
         let rot_quat = self.quat();
         let up = rot_quat * Vec3::Y;
         let dir = rot_quat * Vec3::NEG_Z;
-        Mat4::look_to_rh(self.position, dir, up)
+        Mat4::look_to_rh(self.position.into(), dir, up)
     }
 
     pub fn rotation_matrix(&self) -> Mat3 {
@@ -252,13 +252,13 @@ impl Camera {
         self.projection_matrix() * self.view_matrix()
     }
 
-    pub fn world_to_clip(&self, pos: Vec3) -> Vec4 {
+    pub fn world_to_clip(&self, pos: Vec3A) -> Vec4 {
         let view_proj = self.projection_view_matrix();
         let pos_w = Vec4::new(pos.x, pos.y, pos.z, 1.0);
         view_proj * pos_w
     }
 
-    pub fn world_to_clip_ncd(&self, pos: Vec3) -> Vec3 {
+    pub fn world_to_clip_ncd(&self, pos: Vec3A) -> Vec3 {
         let clip = self.world_to_clip(pos);
         clip.xyz() / clip.w
     }
@@ -274,6 +274,6 @@ impl Camera {
         let direction = (near_point - far_point).normalize();
 
         // Ray3::new(near_point.xyz(), direction)
-        Ray3::new(self.position, direction)
+        Ray3::new(self.position, direction.into())
     }
 }

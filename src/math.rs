@@ -13,15 +13,16 @@ pub enum Axis {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Face {
-    PosX,
-    PosY,
-    PosZ,
-    NegX,
-    NegY,
-    NegZ,
+    PosX = 0,
+    PosY = 1,
+    PosZ = 2,
+    NegX = 3,
+    NegY = 4,
+    NegZ = 5,
 }
 
 impl Face {
+    #[inline]
     pub fn axis(self) -> Axis {
         match self {
             Face::PosX | Face::NegX => Axis::X,
@@ -30,16 +31,61 @@ impl Face {
         }
     }
 
-    pub fn normal(self) -> Vec3 {
+    #[inline]
+    pub fn normal(self) -> Vec3A {
         match self {
-            Face::PosX => Vec3::X,
-            Face::PosY => Vec3::Y,
-            Face::PosZ => Vec3::Z,
-            Face::NegX => Vec3::NEG_X,
-            Face::NegY => Vec3::NEG_Y,
-            Face::NegZ => Vec3::NEG_Z,
+            Face::PosX => Vec3A::X,
+            Face::PosY => Vec3A::Y,
+            Face::PosZ => Vec3A::Z,
+            Face::NegX => Vec3A::NEG_X,
+            Face::NegY => Vec3A::NEG_Y,
+            Face::NegZ => Vec3A::NEG_Z,
         }
     }
+
+    pub fn from_direction(dir: Vec3A) -> Self {
+        let abs = dir.abs();
+        if abs.x >= abs.y {
+            if abs.x >= abs.z {
+                if dir.x.is_sign_negative() {
+                    Face::NegX
+                } else {
+                    Face::PosX
+                }
+            } else {
+                if dir.z.is_sign_negative() {
+                    Face::NegZ
+                } else {
+                    Face::PosZ
+                }
+            }
+        } else {
+            if abs.y >= abs.z {
+                if dir.y.is_sign_negative() {
+                    Face::NegY
+                } else {
+                    Face::PosY
+                }
+            } else {
+                if dir.z.is_sign_negative() {
+                    Face::NegZ
+                } else {
+                    Face::PosZ
+                }
+            }
+        }
+    }
+
+    #[inline]
+    pub fn index(self) -> usize {
+        self as usize
+    }
+}
+include!("byte_to_f32.rs");
+
+#[inline]
+pub const fn byte_scalar(byte: u8) -> f32 {
+    BYTE_TO_F32[byte as usize]
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -144,8 +190,8 @@ pub fn next_face(point: Vec3, direction: Vec3, cell_size: Vec3, cell_offset: Vec
 
 pub fn raycast<F: FnMut(&IVec3, Face, f32) -> bool>(
     ray: Ray3,
-    cell_size: Vec3,
-    cell_offset: Vec3,
+    cell_size: Vec3A,
+    cell_offset: Vec3A,
     mut callback: F,
 ) {
     fn calc_step(cell_size: f32, magnitude: f32) -> f32 {
