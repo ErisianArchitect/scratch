@@ -35,6 +35,7 @@ impl GridSize {
         (y * self.width) + x
     }
 
+    /// Gets the position based on the index.
     #[inline]
     pub const fn inv_index(self, index: u32) -> (u32, u32) {
         (index % self.width, index / self.width)

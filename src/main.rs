@@ -2,9 +2,15 @@
 use std::{borrow::Borrow, collections::{HashMap, VecDeque}, path::PathBuf, sync::{atomic::AtomicU64, Arc, Mutex}, time::{Duration, Instant}};
 
 use glam::*;
+use scratch::math::*;
+use scratch::camera::*;
+use scratch::perlin::perlin;
+use rayon::prelude::*;
+use noise::OpenSimplex;
+use scratch::cubemap::*;
 use image::{Rgb, RgbImage, Rgba, RgbaImage};
 use itertools::Itertools;
-use noise::{NoiseFn, OpenSimplex};
+use noise::NoiseFn;
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use scratch::{camera::Camera, chunk::{self, Chunk, RayHit}, cubemap::Cubemap, dag::*, diff_plot::DiffPlot, math::{self, Face}, open_simplex::open_simplex_2d, perlin::{make_seed, Permutation}, ray::Ray3, tracegrid::{GridSize, TraceGrid}};
 use sha2::digest::typenum::Diff;
@@ -14,82 +20,6 @@ macro_rules! count_ids {
     ($first:ident $(,$rest:ident)*$(,)?) => {
         (1 + count_ids!($($rest),*))
     };
-}
-
-// Goal:
-// Have global registry of serializable types with IDs.
-
-trait Fnord {
-    fn foo(&self);
-    fn bar(&self);
-    fn baz(&self);
-}
-
-impl Fnord for i32 {
-    fn foo(&self) {
-        println!("i32::foo()");
-    }
-
-    fn bar(&self) {
-        println!("i32::bar()");
-    }
-
-    fn baz(&self) {
-        println!("i32::baz()");
-    }
-}
-
-impl Fnord for &'static str {
-    fn foo(&self) {
-        println!("str::foo()");
-    }
-
-    fn bar(&self) {
-        println!("str::bar()");
-    }
-
-    fn baz(&self) {
-        println!("str::baz()");
-    }
-}
-
-struct Fred {
-    fnord: Box<dyn Fnord>,
-}
-
-impl Fred {
-    pub fn new<T: Fnord + 'static>(value: T) -> Self {
-        Self {
-            fnord: Box::new(value),
-        }
-    }
-}
-
-impl std::ops::Deref for Fred {
-    type Target = dyn Fnord;
-
-    fn deref(&self) -> &Self::Target {
-        self.fnord.as_ref()
-    }
-}
-
-fn take_box<T: Into<Option<Box<u32>>>>(value: T) -> Option<Box<u32>> {
-    value.into()
-}
-
-// fn expect<A, R: Try<Output>>(v: )
-
-fn calculate_perf_tri() {
-    let squares: [i64; 512] = std::array::from_fn(|i| (i as i64).pow(2));
-    let squares_map: HashMap<i64, i64> = HashMap::from_iter(squares.iter().cloned().enumerate().map(|(i, sq)| { (sq, i as i64) }));
-    for i in 1..512 {
-        for j in 1..512 {
-            let comb = squares[i] + squares[j];
-            if let Some(&sq) = squares_map.get(&comb) {
-                println!("{i} * {i} + {j} * {j} = {sq} * {sq}");
-            }
-        }
-    }
 }
 
 macro_rules! doop {
@@ -157,36 +87,18 @@ fn hor_line<F: FnMut(i32, i32)>(x_range: std::ops::Range<i32>, y: i32, mut f: F)
     }
 }
 
-// prototype!(
-//     do!()
-// );
-
-fn gridsize_test() {
-    let size = GridSize::new(2048, 2048);
-    let mut indices = vec![(0u32, 0u32); (size.width*size.height) as usize];
-    const ITERATIONS: usize = 1000;
-    let mut timings = Vec::<Duration>::with_capacity(ITERATIONS);
-    let mut work_proof = 0u32;
-    for _ in 0..ITERATIONS {
-        let start = Instant::now();
-        for y in 0..size.height {
-            for x in 0..size.width {
-                let index = size.index(x, y);
-                work_proof = work_proof.wrapping_add(index);
-                indices[index as usize] = (x, y);
-            }
-        }
-        work_proof = work_proof.wrapping_add(work_proof);
-        let elapsed = start.elapsed();
-        timings.push(elapsed);
-    }
-    println!("Work Proof: {work_proof}");
-    let avg_count = timings.len() as u32;
-    let avg_time = timings.into_iter().sum::<Duration>() / avg_count;
-    println!("Iterations: {ITERATIONS}");
-    println!("Average time: {avg_time:.3?}");
-}
-
+/// For toggling code for fast iteration.
+/// Syntax:
+/// ```rust, no_run
+/// // run
+/// code_toggle!([r] {
+///     println!("This code will be run because of the 'r'.");
+/// });
+/// // no run
+/// code_toggle!([] {
+///     println!("There's no 'r' inside the brackets, so this code will not run.");
+/// });
+/// ```
 macro_rules! code_toggle {
     ($([$($kw:ident)?] {$($tokens:tt)*})*) => {
         $(
@@ -198,85 +110,6 @@ macro_rules! code_toggle {
     };
     (@unwrap; [] {$($tokens:tt)*}) => {};
 
-}
-
-#[inline(always)]
-pub const fn morton6(index: u32) -> u32 {
-    let step1 = (index | (index << 6)) & 0b0000111000000111;
-    let step2 = (step1 | (step1 << 2)) & 0b0011001000011001;
-    let step3 = (step2 | (step2 << 2)) & 0b1001001001001001;
-    return step3;
-}
-
-#[inline(always)]
-pub fn fast_morton(index: u32, mask: u32) -> u32 {
-    use std::arch::x86_64::_pdep_u32;
-    unsafe {
-        _pdep_u32(index, mask)
-    }
-}
-
-#[inline(always)]
-pub fn fast_morton6_3_x(index: u32) -> u32 {
-    const SCATTER: u32 = 0b1001001001001001;
-    fast_morton(index, SCATTER)
-}
-
-#[inline(always)]
-pub fn fast_morton6_3_y(index: u32) -> u32 {
-    const SCATTER: u32 = 0b10010010010010010;
-    fast_morton(index, SCATTER)
-}
-
-#[inline(always)]
-pub fn fast_morton6_3_z(index: u32) -> u32 {
-    const SCATTER: u32 = 0b100100100100100100;
-    fast_morton(index, SCATTER)
-}
-
-#[inline(always)]
-pub fn morton6_3(x: u32, y: u32, z: u32) -> u32 {
-    fast_morton6_3_x(x) | fast_morton6_3_y(y) | fast_morton6_3_z(z)
-}
-
-pub struct RaytraceChunk {
-    blocks: Box<[u32]>,
-}
-
-impl RaytraceChunk {
-    pub fn new() -> Self {
-        Self {
-            blocks: (0..64*64*64).map(|_| 0u32).collect(),
-        }
-    }
-
-    pub fn get(&self, x: i32, y: i32, z: i32) -> u32 {
-        let x = x as u32 & 0b111111;
-        let y = y as u32 & 0b111111;
-        let z = z as u32 & 0b111111;
-
-        let index = ((y << 12) | (z << 6) | x) as usize;
-        self.blocks[index]
-    }
-
-    pub fn get_morton(&self, x: i32, y: i32, z: i32) -> u32 {
-        let index = morton6_3(x as u32, y as u32, z as u32);
-        self.blocks[index as usize]
-    }
-
-    pub fn set(&mut self, x: i32, y: i32, z: i32, id: u32) {
-        let x = x as u32 & 0b111111;
-        let y = y as u32 & 0b111111;
-        let z = z as u32 & 0b111111;
-
-        let index = ((y << 12) | (z << 6) | x) as usize;
-        self.blocks[index] = id;
-    }
-
-    pub fn set_morton(&mut self, x: i32, y: i32, z: i32, id: u32) {
-        let index = morton6_3(x as u32, y as u32, z as u32);
-        self.blocks[index as usize] = id;
-    }
 }
 
 macro_rules! timeit {
@@ -291,54 +124,12 @@ macro_rules! timeit {
 
 fn main() {
     // gridsize_test();
-    code_toggle!(
-        [] {
-            gridsize_test();
-        }
-        [r] {
-            let start = Instant::now();
-            raycast_scene();
-            let elapsed = start.elapsed();
-            println!("Program finished in {elapsed:.3?}");
-        }
-        [] {
-            morton_test();
-        }
-        [] {
-            glam_test();
-        }
-    );
+    let start = Instant::now();
+    raycast_scene();
+    let elapsed = start.elapsed();
+    println!("Program finished in {elapsed:.3?}");
     return;
 }
-
-// fn calc_ray(ndc: Vec2) -> Ray3 {
-
-// }
-
-// fn rot_dir(dir: Vec3, rot: Vec2) -> Vec3 {
-//     // let rot = vec2(rot.x, rot.y);
-//     let mut dir = dir;
-
-//     let cy = rot.y.cos();
-//     let sy = rot.y.sin();
-
-//     let xay = dir.x * cy + dir.z * sy;
-//     let zay = dir.x * sy - dir.z * cy;
-
-//     dir.x = xay;
-//     dir.z = zay;
-
-//     let cx = rot.x.cos();
-//     let sx = rot.x.sin();
-
-//     let yax = dir.y * cx + dir.z * sx;
-//     let zax = dir.y * sx - dir.z * cx;
-
-//     dir.y = yax;
-//     dir.z = zax;
-
-//     dir
-// }
 
 #[inline(always)]
 fn rot_dir(dir: Vec3, rot: Vec2) -> Vec3 {
@@ -362,66 +153,9 @@ fn rot_dir(dir: Vec3, rot: Vec2) -> Vec3 {
     let xz = xp_reg + zp_reg;
 
     vec3(xz.x, yz.y, xz.y)
-    
-    // let xp = x;
-    // let yp = y * cp - z * sp;
-    // let zp = y * sp + z * cp;
-
-    // let x = xp * cy + zp * sy;
-    // let y = yp;
-    // let z = -xp * sy + zp * cy;
-    // vec3(x, y, z)
 }
 
-#[test]
-fn glam_test() {
-    use glam::*;
-
-    // let x = -0.73;
-    // let y = -0.5;
-    // let fov = 45f32.to_radians();
-    // let aspect_ratio = 1920.0 / 1080.0;
-
-    // let tan_fov_half = (fov * 0.5).tan();
-    // let asp_fov = aspect_ratio * tan_fov_half;
-
-    // let nx = x * asp_fov;
-    // let ny = -y * tan_fov_half;
-    // // (forward + nx * right + ny * up).normalize()
-    // let ray_dir = vec3(nx, ny, -1.0).normalize();
-
-    // let cam = Camera::from_look_to(Vec3A::ZERO, Vec3A::NEG_Z, 45f32.to_radians(), 1.0, 100.0, (1920, 1080));
-
-    // let cam_dir = cam.normalized_screen_to_ray(vec2(x, y));
-
-    // let dot = ray_dir.dot(cam_dir.dir);
-    // println!("Dot: {dot:.5}");
-
-    // let angle = 90f32.to_radians();
-    // let s = angle.sin();
-    // let c = angle.cos();
-    // let unrot = vec2(0.0, 1.0);
-    // let rot = vec2(
-    //     unrot.x * c - unrot.y * s,
-    //     unrot.x * s + unrot.y * c,
-    // );
-    // let left = vec2(-1.0, 0.0);
-    // let dot = rot.dot(left);
-    
-    // println!("{rot:?}\n{dot:.4?}");
-    // println!("################################");
-    // let rot = vec2(33.0f32.to_radians(), 12.0f32.to_radians());
-    // let quaty = Quat::from_rotation_y(rot.y);
-    // let quatx = Quat::from_rotation_x(rot.x);
-    // let quat = quatx * quaty;
-    // let quat = Quat::from_euler(EulerRot::YXZ, rot.y, rot.x, 0.0);
-    // let dir = Vec3::NEG_Z;
-    // let rot_dir1 = quat * dir;
-    // let rot_dir2 = rot_dir(dir, vec2(rot.x, rot.y));
-    // println!("Len1: {:.3}, Len2: {:.3}", rot_dir1.length(), rot_dir2.length());
-    // println!("Rot Dot: {}", rot_dir1.dot(rot_dir2));
-}
-
+/// Used to calculate the ray direction towards -Z.
 #[derive(Debug, Clone, Copy)]
 pub struct RayCalc {
     mult: Vec2,
@@ -452,34 +186,7 @@ macro_rules! timed {
     };
 }
 
-pub fn morton_test() {
-    let mut chunk = RaytraceChunk::new();
-    // let elapsed = timeit!{
-        // };
-        // println!("Set Morton: {elapsed:.3?}");
-    timed!("Set: {time:.3?}" => {
-        for x in 0..64 {
-            for y in 0..64 {
-                for z in 0..64 {
-                    chunk.set(x, y, z, x as u32);
-                }
-            }
-        }
-    });
-    let mut total = 0;
-    timed!("Get: {time:.3?}" => {
-        for x in 0..64 {
-            for y in 0..64 {
-                for z in 0..64 {
-                    let id = chunk.get(x, y, z);
-                    total += id;
-                }
-            }
-        }
-    });
-    println!("Proof of work: {total}");
-}
-
+/// OpenSimplex color sampling.
 struct PosColor {
     rsimp: OpenSimplex,
     gsimp: OpenSimplex,
@@ -497,9 +204,6 @@ impl PosColor {
     }
 
     pub fn get(&self, pos: Vec3A) -> Vec3A {
-        // return Vec3A::ONE;
-        // Vec3::Y
-
         let pos_arr = [pos.x as f64 * self.scale, pos.y as f64 * self.scale, pos.z as f64 * self.scale];
         let r: f64 = self.rsimp.get(pos_arr) * 0.5 + 0.5;
         let g: f64 = self.gsimp.get(pos_arr) * 0.5 + 0.5;
@@ -599,17 +303,20 @@ pub struct Reflection {
     reflectivity: f32,
 }
 
+/// Reflects a ray direction on a surface with the given normal.
 #[inline(always)]
 fn reflect(ray_dir: Vec3A, normal: Vec3A) -> Vec3A {
     ray_dir - 2.0 * (ray_dir * normal) * normal
 }
 
+/// Combine reflection color with diffuse based on reflectivity.
 #[inline(always)]
 fn combine_reflection(reflectivity: f32, diffuse: Vec3A, reflection: Vec3A) -> Vec3A {
     reflectivity * reflection + (1.0 - reflectivity) * diffuse
 }
 
 impl Reflection {
+    /// Calculates the reflectivity based on the surface normal and view direction.
     #[inline(always)]
     pub fn calculate(
         self,
@@ -621,6 +328,7 @@ impl Reflection {
     }
 }
 
+/// Holds raytracer stuff.
 pub struct TraceData {
     chunk: Chunk,
     skybox: Cubemap,
@@ -632,6 +340,7 @@ pub struct TraceData {
 }
 
 impl TraceData {
+    /// Calculates the color of a hit point before reflection calculation. This will also calculate shadow.
     pub fn calc_color_before_reflections(&self, hit_point: Vec3A, hit_normal: Vec3A) -> Vec3A {
         let color = self.pos_color.get(hit_point);
         let light_ray = Ray3::new(hit_point, self.lighting.directional.inv_dir);
@@ -639,6 +348,7 @@ impl TraceData {
         self.lighting.calculate(color, hit_normal, light_hit.is_some())
     }
 
+    /// Calculates the grayscale color of a hit point before reflection calculation without a diffuse color. This will also calculate shadow.
     pub fn calc_color_before_reflections_no_diffuse(&self, hit_point: Vec3A, hit_normal: Vec3A) -> Vec3A {
         let color = Vec3A::ONE;
         let light_ray = Ray3::new(hit_point, self.lighting.directional.inv_dir);
@@ -646,53 +356,56 @@ impl TraceData {
         self.lighting.calculate(color, hit_normal, light_hit.is_some())
     }
 
+    /// Trace reflections for exact number of steps and calculate the color.
     pub fn trace_reflections(&self, ray: Ray3, near: f32, far: f32, steps: u16) -> Option<Vec3A> {
         let Some(hit) = self.chunk.raycast(ray, far) else {
-            // return Some(Vec3A::ZERO);
+            // no hit, so return the sky color.
             return Some(self.sky_color(ray.dir));
         };
         let Some(face) = hit.face else {
+            // If there was no hit face, return Red so that it's clear that no hit was made.
+            // this is useful for debugging since the camera will most likely be outside of the bounds of the scene, so there should be no red.
+            // If there is red visible, that means that the ray is penetrating too far into the cube.
             return Some(Vec3A::X);
         };
+        // The ray is too close, so return Green. (for debugging purposes)
         if hit.distance < near {
             return Some(Vec3A::Y);
         }
+
         let hit_point = hit.get_hit_point(ray, face);
         let hit_normal = face.normal();
         let hit_fract = hit_point.fract();
-        // let cube_color = self.pos_color.get(hit_point.floor() * 2.3);
+        /// easy way to mix up colors is to create a checkerboard pattern.
         let checker = checkerboard(hit.coord.x, hit.coord.y, hit.coord.z);
         let checker_color = if checker {
             Vec3A::ONE
         } else {
             Vec3A::splat(0.3)
         };
-        // let mut diffuse = checker_color;
         let mut diffuse = self.calc_color_before_reflections(hit_point, hit_normal);
-        // let mut diffuse = self.calc_color_before_reflections_no_diffuse(hit_point, hit_normal);
+        // apply the checkerboard pattern.
         diffuse = diffuse * checker_color;
+        /// Edge detection.
+        #[inline(always)]
         fn on_edge(x: f32, y: f32) -> bool {
             x < 0.05 || y < 0.05 || x >= 0.95 || y >= 0.95
         }
-        // diffuse = Vec3A::ONE;
-        // match face {
-        //     Face::PosX | Face::NegX if on_edge(hit_fract.y, hit_fract.z) => diffuse = diffuse * 0.1,
-        //     Face::PosY | Face::NegY if on_edge(hit_fract.x, hit_fract.z) => diffuse = diffuse * 0.1,
-        //     Face::PosZ | Face::NegZ if on_edge(hit_fract.x, hit_fract.y) => diffuse = diffuse * 0.1,
-        //     _ => (),
-        // }
+        /// Check if we need to trace more reflections. (this will test if the hit surface is reflective).
         if steps > 1 && self.chunk.get_reflection(hit.coord.x, hit.coord.y, hit.coord.z) {
-            // diffuse = Vec3A::ONE;
             let reflect_dir = reflect(ray.dir, hit_normal);
             let reflect_ray = Ray3::new(hit_point, reflect_dir);
             let reflectivity = self.reflection.calculate(hit_normal, ray.dir);
             let Some(reflection) = self.trace_reflections(reflect_ray, 0.0, far - hit.distance, steps - 1) else {
                 // return Some(combine_reflection(reflectivity, diffuse, self.sky_color(reflect_dir)));
+                // No hit from the reflection trace, so return the diffuse color.
                 return Some(diffuse);
             };
             let final_color = combine_reflection(reflectivity, diffuse, reflection);
             Some(final_color)
         } else {
+            // no reflection in this branch, so just return the diffuse color.
+            // Edge detection to draw grid-lines.
             match face {
                 Face::PosX | Face::NegX if on_edge(hit_fract.y, hit_fract.z) => diffuse = diffuse * 0.1,
                 Face::PosY | Face::NegY if on_edge(hit_fract.x, hit_fract.z) => diffuse = diffuse * 0.1,
@@ -700,23 +413,21 @@ impl TraceData {
                 _ => (),
             }
             Some(diffuse)
-            // Some(diffuse * Vec3A::splat(0.4))
         }
     }
 
+    /// This is the meat of the program. Just a simple `trace_color` method that returns the color that a ray "receives".
+    /// This includes lighting and reflection calculations.
     pub fn trace_color(&self, ray: Ray3, near: f32, far: f32) -> Vec3A {
         if let Some(color) = self.trace_reflections(ray, near, far, self.reflection_steps) {
             color
         } else {
             self.sky_color(ray.dir)
-            // self.sky_color
         }
     }
 
+    /// Calculate the sky color given the ray direction. This will sample a cubemap.
     pub fn sky_color(&self, ray_dir: Vec3A) -> Vec3A {
-        // let gray = self.pos_color.rsimp.get([ray_dir.x as f64 * 40.0, ray_dir.y as f64 * 40.0, ray_dir.z as f64 * 40.0]);
-        // let gray = gray * 0.5 + 0.5;
-        // self.lighting.ambient.apply(Vec3A::splat(gray as f32) * self.sky_color)
         let rgb = self.skybox.sample_dir(ray_dir);
         let color = vec3a(
             math::byte_scalar(rgb.0[0]),
@@ -724,33 +435,18 @@ impl TraceData {
             math::byte_scalar(rgb.0[2]),
         );
         self.lighting.ambient.apply(color * self.sky_color)
-        // self.sky_color
     }
 }
 
-#[test]
-fn testit() {
-    let v = 1.24523f32;
-    let c = v.clamp(0.0, 10.0);
-    if c != v {
-        println!("Changed")
-    } else {
-        println!("Same")
-    }
-}
-
+/// For creating a 3D checkerboard pattern.
 fn checkerboard(x: i32, y: i32, z: i32) -> bool {
     ((x & 1) ^ (y & 1) ^ (z & 1)) != 0
 }
 
 pub fn raycast_scene() {
-    use glam::*;
-    use scratch::math::*;
-    use scratch::camera::*;
-    use scratch::perlin::perlin;
-    use rayon::prelude::*;
-    use noise::OpenSimplex;
-    use scratch::cubemap::*;
+    // Super Sampling Anti-aliasing.
+    // Setting this to true means that the scene will render at twice the resolution then downsample to the target resolution.
+    // Perhaps the more optimal way to do this would be to shoot for rays for each pixel instead of just one, but I haven't gotten that far yet.
     const SSAA: bool = true;
     println!("Starting.");
     let start = Instant::now();
@@ -773,6 +469,7 @@ pub fn raycast_scene() {
     };
     let elapsed = start.elapsed();
     println!("Loaded Cubemap in {elapsed:.3?}");
+    /// The seed for PosColor.
     const SEED: u32 = 1205912;
     // let simplex = OpenSimplex::new(SEED);
     let rsimp = OpenSimplex::new(SEED + 0);
@@ -785,30 +482,29 @@ pub fn raycast_scene() {
         bsimp,
         scale: 1.0,
     };
-    let perm = Permutation::from_seed(make_seed(SEED as u64));
+    // let perm = Permutation::from_seed(make_seed(SEED as u64));
+    // I've left several grid sizes here to test out different resolutions.
     // let size = GridSize::new(512, 512);
     // let size = GridSize::new(2048, 2048);
     // let size = GridSize::new(1280, 720);
-    // let size = GridSize::new(1920, 1080);
-    let size = GridSize::new(1920*2, 1080*2);
-    // let size = GridSize::new(1920*4, 1080*4);
+    // let size = GridSize::new(1920, 1080); // FHD
+    let size = GridSize::new(1920*2, 1080*2); // 4K
+    // let size = GridSize::new(1920*4, 1080*4); // 8K
+
     let size = if SSAA {
         GridSize::new(size.width * 2, size.height * 2)
     } else {
         size
     };
-    // let same = 1024*16;
-    // let size = GridSize::new(same, same/2);
+    // Different camera views for the scene.
     // favorite cam
     // let mut cam = Camera::from_look_at(vec3a(-24.0, 70.0-12.0, 48.0), vec3a(32., 32.-12., 32.), 45.0f32.to_radians(), 1.0, 100.0, (size.width, size.height));
-    // 42.5, 33
     // let mut cam = Camera::from_look_at(vec3a(-24.0, 70.0-2.0, 48.0+20.0), vec3a(0., 42.5+10.0, 32.5+20.0), 45.0f32.to_radians(), 1.0, 100.0, (size.width, size.height));
     let mut cam = Camera::from_look_at(vec3a(-24.0, 70.0-12.0, 48.0+10.0), vec3a(0., 42.5, 32.5+10.0), 90.0f32.to_radians(), 1.0, 100.0, (size.width, size.height));
     // let mut cam = Camera::from_look_at(vec3a(-24.0, 70.0-12.0, 64.0+24.0), vec3a(32., 32.-12., 32.), 90.0f32.to_radians(), 1.0, 100.0, (size.width, size.height));
     // let mut cam = Camera::from_look_at(vec3a(42.0, 7.0, 42.0), vec3a(32., 5., 32.), 90.0f32.to_radians(), 1.0, 100.0, (size.width, size.height));
     // let mut cam = Camera::from_look_at(vec3a(24.0, 24.0, 16.0), vec3a(32.0, 8.0, 32.0), 90.0f32.to_radians(), 1.0, 100.0, (size.width, size.height));
-    // cam.look_at(vec3a(0., 1000., 0.));
-    let mut last = IVec3::ZERO;
+    
     let mut chunk = Chunk::new();
     let mut trace = TraceData {
         chunk,
@@ -835,14 +531,17 @@ pub fn raycast_scene() {
         // reflection: Reflection { reflectivity: 1.0 },
         reflection_steps: 5,
     };
-    let start = Instant::now();
+
     let ray_calc = RayCalc::new(cam.fov, cam.screen_size);
     let cam_pos = cam.position;
+    // by creating a reference, then moving it into the closure, we get better performance than if we didn't use a move closure and didn't use a reference.
+    // I'm not sure why, but that's just how it is.
     let cam_ref = &cam;
     let cam_rot = cam.rotation_matrix();
-    // let cam_rot = cam.rotation;
+    let start = Instant::now();
     let rays = (0..size.width*size.height).into_par_iter().map(move |i| {
         let (x, y) = size.inv_index(i);
+        // NDC (normalized device coordinate) calculation.
         let xy = vec2(x as f32, (size.height - y) as f32);
         let wh = vec2(size.width as f32, size.height as f32);
         let hs = vec2(0.5, 0.5);
@@ -853,6 +552,10 @@ pub fn raycast_scene() {
     let elapsed = start.elapsed();
     println!("Calculated {} rays in {elapsed:.3?}", rays.len());
 
+    // Much of the code after this point is toggleable code for fast iteration. If you want to get to the raytracing part, skip ahead.
+    // I'll put up a big sign that says "RAYTRACING".
+
+    /// This is for generating some simple terrain for testing purposes.
     code_toggle!([] {
         let start = Instant::now();
         for x in 0..64 {
@@ -1045,7 +748,11 @@ pub fn raycast_scene() {
 
     let near = 0.1;
     let far = 250.0;
+    // the following commented out line is for normalized depth calculation (0 for closest, 1 for furthest).
     // let depth_mul = 1.0 / (far - near);
+    // #############################################
+    // #                RAYTRACING!                #
+    // #############################################
     let start = std::time::Instant::now();
     {
         let trace = &trace;
@@ -1155,6 +862,8 @@ grave!{
     // });
     algo.img.save("output.png").expect("Failed to save image.");
 }
+
+// All code beyond this point is old experiments. It can be ignored.
 
 grave!{
     fn branch_experiment() {
