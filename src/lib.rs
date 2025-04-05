@@ -11,3 +11,4 @@ pub mod camera;
 pub mod ray;
 pub mod tracegrid;
 pub mod voxel;
+pub mod cubemap;

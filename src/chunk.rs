@@ -366,6 +366,101 @@ impl Chunk {
             });
         }
         loop {
+            // let lhs = Vec3A::new(t_max.x, t_max.x, t_max.y);
+            // let rhs = Vec3A::new(t_max.y, t_max.z, t_max.z);
+            // let lte = lhs.cmple(rhs);
+            // match lte.bitmask() {
+            //     // y < x, z < x, z < y
+            //     0b000 => {
+            //         let lhs = vec3a(t_max.z, t_max.z, 0.0);
+            //         let rhs = vec3a(delta_max.z, max_distance, <f32>::INFINITY);
+            //         let result = lhs.cmpge(rhs);
+            //         if result.any() {
+            //             return None;
+            //         }
+            //         cell.z += step.z;
+            //         if self.get(cell.x, cell.y, cell.z) {
+            //             return Some(RayHit::hit_face(face.2, cell, t_max.z));
+            //         }
+            //         t_max.z += delta.z;
+            //     }
+            //     // x <= y, z < x, z < y
+            //     0b001 => {
+            //         let lhs = vec3a(t_max.z, t_max.z, 0.0);
+            //         let rhs = vec3a(delta_max.z, max_distance, <f32>::INFINITY);
+            //         let result = lhs.cmpge(rhs);
+            //         if result.any() {
+            //             return None;
+            //         }
+            //         cell.z += step.z;
+            //         if self.get(cell.x, cell.y, cell.z) {
+            //             return Some(RayHit::hit_face(face.2, cell, t_max.z));
+            //         }
+            //         t_max.z += delta.z;
+            //     }
+            //     // y < x, x <= z, z < y
+            //     0b010 => unreachable!("Impossible state."),
+            //     // x <= y, x <= z, z < y
+            //     0b011 => {
+            //         let lhs = vec3a(t_max.x, t_max.x, 0.0);
+            //         let rhs = vec3a(delta_max.x, max_distance, <f32>::INFINITY);
+            //         let result = lhs.cmpge(rhs);
+            //         if result.any() {
+            //             return None;
+            //         }
+            //         cell.x += step.x;
+            //         if self.get(cell.x, cell.y, cell.z) {
+            //             return Some(RayHit::hit_face(face.0, cell, t_max.x));
+            //         }
+            //         t_max.x += delta.x;
+            //     }
+            //     // y < x, z < x, y <= z
+            //     0b100 => {
+            //         let lhs = vec3a(t_max.y, t_max.y, 0.0);
+            //         let rhs = vec3a(delta_max.y, max_distance, <f32>::INFINITY);
+            //         let result = lhs.cmpge(rhs);
+            //         if result.any() {
+            //             return None;
+            //         }
+            //         cell.y += step.y;
+            //         if self.get(cell.x, cell.y, cell.z) {
+            //             return Some(RayHit::hit_face(face.1, cell, t_max.y));
+            //         }
+            //         t_max.y += delta.y;
+            //     }
+            //     // x <= y, z < x, y <= z
+            //     0b101 => unreachable!("Impossible state."),
+            //     // y < x, x <= z, y <= z
+            //     0b110 => {
+            //         let lhs = vec3a(t_max.y, t_max.y, 0.0);
+            //         let rhs = vec3a(delta_max.y, max_distance, <f32>::INFINITY);
+            //         let result = lhs.cmpge(rhs);
+            //         if result.any() {
+            //             return None;
+            //         }
+            //         cell.y += step.y;
+            //         if self.get(cell.x, cell.y, cell.z) {
+            //             return Some(RayHit::hit_face(face.1, cell, t_max.y));
+            //         }
+            //         t_max.y += delta.y;
+            //     }
+            //     // x <= y, x <= z, y <= z
+            //     0b111 => {
+            //         let lhs = vec3a(t_max.x, t_max.x, 0.0);
+            //         let rhs = vec3a(delta_max.x, max_distance, <f32>::INFINITY);
+            //         let result = lhs.cmpge(rhs);
+            //         if result.any() {
+            //             return None;
+            //         }
+            //         cell.x += step.x;
+            //         if self.get(cell.x, cell.y, cell.z) {
+            //             return Some(RayHit::hit_face(face.0, cell, t_max.x));
+            //         }
+            //         t_max.x += delta.x;
+            //     }
+            //     _ => unreachable!("Impossible state."),
+            // }
+
             if t_max.x <= t_max.y {
                 if t_max.x <= t_max.z {
                     if t_max.x >= delta_max.x || t_max.x >= max_distance {

@@ -13,15 +13,16 @@ pub enum Axis {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Face {
-    PosX,
-    PosY,
-    PosZ,
-    NegX,
-    NegY,
-    NegZ,
+    PosX = 0,
+    PosY = 1,
+    PosZ = 2,
+    NegX = 3,
+    NegY = 4,
+    NegZ = 5,
 }
 
 impl Face {
+    #[inline]
     pub fn axis(self) -> Axis {
         match self {
             Face::PosX | Face::NegX => Axis::X,
@@ -30,6 +31,7 @@ impl Face {
         }
     }
 
+    #[inline]
     pub fn normal(self) -> Vec3A {
         match self {
             Face::PosX => Vec3A::X,
@@ -40,6 +42,50 @@ impl Face {
             Face::NegZ => Vec3A::NEG_Z,
         }
     }
+
+    pub fn from_direction(dir: Vec3A) -> Self {
+        let abs = dir.abs();
+        if abs.x >= abs.y {
+            if abs.x >= abs.z {
+                if dir.x.is_sign_negative() {
+                    Face::NegX
+                } else {
+                    Face::PosX
+                }
+            } else {
+                if dir.z.is_sign_negative() {
+                    Face::NegZ
+                } else {
+                    Face::PosZ
+                }
+            }
+        } else {
+            if abs.y >= abs.z {
+                if dir.y.is_sign_negative() {
+                    Face::NegY
+                } else {
+                    Face::PosY
+                }
+            } else {
+                if dir.z.is_sign_negative() {
+                    Face::NegZ
+                } else {
+                    Face::PosZ
+                }
+            }
+        }
+    }
+
+    #[inline]
+    pub fn index(self) -> usize {
+        self as usize
+    }
+}
+include!("byte_to_f32.rs");
+
+#[inline]
+pub const fn byte_scalar(byte: u8) -> f32 {
+    BYTE_TO_F32[byte as usize]
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
