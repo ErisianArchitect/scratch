@@ -273,7 +273,6 @@ impl Camera {
 
         let direction = (near_point - far_point).normalize();
 
-        // Ray3::new(near_point.xyz(), direction)
         Ray3::new(self.position, direction.into())
     }
 }

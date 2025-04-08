@@ -56,8 +56,6 @@ impl Cubemap {
     }
 
     pub fn sample_uv(&self, face: Face, u: f32, v: f32) -> Rgb<u8> {
-        // let u = uv.x.clamp(0.0, 1.0) * self.width_mult;
-        // let v = uv.y.clamp(0.0, 1.0) * self.height_mult;
         let u = u.clamp(0.0, 1.0);
         let v = v.clamp(0.0, 1.0);
         image::imageops::sample_bilinear(&self.faces[face.index()], u, v).unwrap_or_else(|| Rgb([0; 3]))
@@ -130,43 +128,4 @@ pub fn read_texture<P: AsRef<Path>>(path: P) -> std::io::Result<RgbImage> {
     let reader = std::io::BufReader::new(file);
     let img = image::load(reader, ImageFormat::Png).expect("Failed to load image.");
     Ok(img.into_rgb8())
-}
-
-#[cfg(test)]
-mod tests {
-    use std::path::PathBuf;
-
-    use super::*;
-    #[test]
-    fn cubemap_sample_test() {
-        let directory = PathBuf::from("./assets/textures/skybox_001/");
-        let top_path = directory.join("purp_top.png");
-        let bottom_path = directory.join("purp_bottom.png");
-        let left_path = directory.join("purp_left.png");
-        let right_path = directory.join("purp_right.png");
-        let front_path = directory.join("purp_front.png");
-        let back_path = directory.join("purp_back.png");
-        let pos_x = read_texture(right_path).unwrap();
-        let pos_y = read_texture(top_path).unwrap();
-        let pos_z = read_texture(back_path).unwrap();
-        let neg_x = read_texture(left_path).unwrap();
-        let neg_y = read_texture(bottom_path).unwrap();
-        let neg_z = read_texture(front_path).unwrap();
-
-        let cubemap = Cubemap::new(pos_x, pos_y, pos_z, neg_x, neg_y, neg_z);
-
-        let mut out = image::RgbImage::new(512, 512);
-        for y in 0..512 {
-            let v = y as f32 / 512.0;
-            for x in 0..512 {
-                let u = x as f32 / 512.0;
-                let pix = cubemap.sample_uv(Face::PosY, u, v);
-                out.put_pixel(x, y, pix);
-            }
-        }
-
-        out.save_with_format("output/top.png", ImageFormat::Png).expect("Failed to save image.");
-        println!("Image saved.");
-        
-    }
 }

@@ -12,15 +12,8 @@ use image::{Rgb, RgbImage, Rgba, RgbaImage};
 use itertools::Itertools;
 use noise::NoiseFn;
 use rand::{rngs::StdRng, Rng, SeedableRng};
-use scratch::{camera::Camera, chunk::{self, Chunk, RayHit}, cubemap::Cubemap, dag::*, diff_plot::DiffPlot, math::{self, Face}, open_simplex::open_simplex_2d, perlin::{make_seed, Permutation}, ray::Ray3, tracegrid::{GridSize, TraceGrid}};
+use scratch::{camera::Camera, chunk::{self, Chunk, RayHit}, cubemap::Cubemap, math::{self, Face}, open_simplex::open_simplex_2d, perlin::{make_seed, Permutation}, ray::Ray3};
 use sha2::digest::typenum::Diff;
-
-macro_rules! count_ids {
-    () => { 0 };
-    ($first:ident $(,$rest:ident)*$(,)?) => {
-        (1 + count_ids!($($rest),*))
-    };
-}
 
 macro_rules! doop {
     ($($name:lifetime : )? $block:block while $condition:expr) => {
@@ -31,60 +24,6 @@ macro_rules! doop {
             }
         }
     };
-}
-
-fn plot_circle<F: FnMut(i32, i32)>(x: i32, y: i32, r: i32, mut f: F) {
-    let mut px = -r;
-    let mut py = 0;
-    let mut err = 2-2*r;
-    let mut r = r;
-    doop!({
-        f(x - px, y + py);
-        f(x - py, y - px);
-        f(x + px, y - py);
-        f(x + py, y + px);
-        r = err;
-        if r <= py {
-            py += 1;
-            err += py * 2 + 1;
-        }
-        if r > px || err > py {
-            px += 1;
-            err += px * 2 + 1;
-        }
-    } while px < 0)
-}
-
-fn fill_circle<F: FnMut(i32, i32)>(x: i32, y: i32, r: i32, mut f: F) {
-    let mut px = -r;
-    let mut py = 0;
-    let mut err = 2-2*r;
-    let mut r = r;
-    doop!({
-        // f(x - px, y + py);
-        // f(x + px, y - py);
-        // f(x - py, y - px);
-        // f(x + py, y + px);
-        for i in (x + px)..=(x - px) {
-            f(i, y + py);
-            f(i, y - py);
-        }
-        r = err;
-        if r <= py {
-            py += 1;
-            err += py * 2 + 1;
-        }
-        if r > px || err > py {
-            px += 1;
-            err += px * 2 + 1;
-        }
-    } while px < 0)
-}
-
-fn hor_line<F: FnMut(i32, i32)>(x_range: std::ops::Range<i32>, y: i32, mut f: F) {
-    for x in x_range {
-        f(x, y);
-    }
 }
 
 /// For toggling code for fast iteration.
@@ -109,50 +48,64 @@ macro_rules! code_toggle {
         $($tokens)*
     };
     (@unwrap; [] {$($tokens:tt)*}) => {};
-
 }
 
-macro_rules! timeit {
-    ($($tokens:tt)*) => {
-        {
-            let timeit_start = Instant::now();
-            $($tokens)*
-            timeit_start.elapsed()
-        }
+macro_rules! timed {
+    ($fmt:literal => $code:expr) => {
+        let elapsed_time = timeit!{
+            $code;
+        };
+        println!($fmt, time=elapsed_time);
     };
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Size {
+    pub width: u32,
+    pub height: u32,
+}
+
+impl std::fmt::Display for Size {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}x{}", self.width, self.height)
+    }
+}
+
+impl Size {
+    pub const fn new(width: u32, height: u32) -> Self {
+        Self {
+            width,
+            height,
+        }
+    }
+
+    #[inline]
+    pub const fn index(self, x: u32, y: u32) -> u32 {
+        (y * self.width) + x
+    }
+
+    /// Gets the position based on the index.
+    #[inline]
+    pub const fn inv_index(self, index: u32) -> (u32, u32) {
+        (index % self.width, index / self.width)
+    }
+
+    #[inline]
+    pub const fn iter_width(self) -> std::ops::Range<u32> {
+        0..self.width
+    }
+
+    #[inline]
+    pub const fn iter_height(self) -> std::ops::Range<u32> {
+        0..self.height
+    }
+}
+
 fn main() {
-    // gridsize_test();
     let start = Instant::now();
     raycast_scene();
     let elapsed = start.elapsed();
     println!("Program finished in {elapsed:.3?}");
-    return;
-}
-
-#[inline(always)]
-fn rot_dir(dir: Vec3, rot: Vec2) -> Vec3 {
-    let rot = vec2(rot.x, rot.y);
-    let mut dir = dir;
-    let [x, y, z] = dir.to_array();
-    let (sy, cy) = rot.y.sin_cos();
-    let (sp, cp) = rot.x.sin_cos();
-
-    let yz_reg = vec4(y, y, -z, z);
-    let p_reg = vec4(cp, sp, sp, cp);
-    let pm_res = yz_reg * p_reg;
-    let yp_reg = vec2(pm_res.x, pm_res.y);
-    let zp_reg = vec2(pm_res.z, pm_res.w);
-    let yz = yp_reg + zp_reg;
-    let xz_reg = vec4(x, -x, yz.y, yz.y);
-    let y_reg = vec4(cy, sy, sy, cy);
-    let ym_res = xz_reg * y_reg;
-    let xp_reg = vec2(ym_res.x, ym_res.y);
-    let zp_reg = vec2(ym_res.z, ym_res.w);
-    let xz = xp_reg + zp_reg;
-
-    vec3(xz.x, yz.y, xz.y)
 }
 
 /// Used to calculate the ray direction towards -Z.
@@ -175,15 +128,6 @@ impl RayCalc {
         let m = ndc * self.mult;
         vec3a(m.x, m.y, -1.0).normalize()
     }
-}
-
-macro_rules! timed {
-    ($fmt:literal => $code:expr) => {
-        let elapsed_time = timeit!{
-            $code;
-        };
-        println!($fmt, time=elapsed_time);
-    };
 }
 
 /// OpenSimplex color sampling.
@@ -348,19 +292,6 @@ pub struct TraceData {
     reflection_steps: u16,
 }
 
-// #[test]
-// fn quick_test() {
-//     use std::collections::VecDeque;
-//     let a = "hello";
-//     let b = "world";
-//     let mut items = vec![];
-//     let mut items = VecDeque::new();
-//     let mut final_answer = 0;
-//     items.push
-//     items.windows(size)
-//     assert_eq!(final_answer, 3 * 12 * 4);
-// }
-
 struct ReflectionAccum {
     color_accum: [Vec3A; 8],
     reflectivity_accum: [f32; 8],
@@ -404,7 +335,7 @@ impl TraceData {
     pub fn calc_color_before_reflections_no_diffuse(&self, hit_point: Vec3A, hit_normal: Vec3A) -> Vec3A {
         let color = Vec3A::ONE;
         let light_ray = Ray3::new(hit_point, self.lighting.directional.inv_dir);
-        let light_hit = self.chunk.raycast(light_ray, 100.0);
+        let light_hit = self.chunk.raycast(light_ray, 112.0);
         self.lighting.calculate(color, hit_normal, light_hit.is_some())
     }
 
@@ -499,24 +430,17 @@ impl TraceData {
     }
 }
 
-#[test]
-fn u64_test() {
-    #[repr(C)]
-    struct U64 {
-        low: u32,
-        high: u32,
-    }
-    let value = U64 { high: 0, low: 1234 };
-    let u64_value: u64 = unsafe {
-        std::mem::transmute(value)
-    };
-    assert_eq!(u64_value, 1234);
-}
-
 /// For creating a 3D checkerboard pattern.
 #[inline(always)]
 fn checkerboard(x: i32, y: i32, z: i32) -> bool {
     ((x & 1) ^ (y & 1) ^ (z & 1)) != 0
+}
+
+#[test]
+fn max_dist() {
+    let sq64: f32 = 64.0 * 64.0;
+    let dist: f32 = (sq64 + sq64 + sq64).sqrt();
+    println!("{dist}");
 }
 
 pub fn raycast_scene() {
@@ -565,11 +489,11 @@ pub fn raycast_scene() {
     // let size = GridSize::new(640, 480);
     // let size = GridSize::new(1280, 720);
     // let size = GridSize::new(1920, 1080); // FHD
-    let size = GridSize::new(1920*2, 1080*2); // 4K
+    let size = Size::new(1920*2, 1080*2); // 4K
     // let size = GridSize::new(1920*4, 1080*4); // 8K
 
     let size = if SSAA {
-        GridSize::new(size.width * 2, size.height * 2)
+        Size::new(size.width * 2, size.height * 2)
     } else {
         size
     };
@@ -848,7 +772,7 @@ pub fn raycast_scene() {
 
     use image::*;
     if SSAA {
-        let size = GridSize::new(size.width/2, size.height/2);
+        let size = Size::new(size.width/2, size.height/2);
         println!("SSAA downscale to {size}");
         let img = DynamicImage::ImageRgb8(img);
         let resized = img.resize_exact(size.width, size.height, imageops::FilterType::Gaussian);
@@ -857,172 +781,3 @@ pub fn raycast_scene() {
         img.save("raycast.png").expect("Failed to save image.");
     }
 }
-
-macro_rules! grave {($($_:tt)*) => {};}
-
-grave!{
-    fn in_bounds(x: i32, y: i32) -> bool {
-        x >= 0 && y >= 0 && x < 1024 && y < 1024
-    }
-
-    fn pix(step_count: i32, level: i32) -> Rgb<u8> {
-        let level = level as f32;
-        let t = level / step_count as f32;
-        let gray = (255.0 * t) as u8;
-        Rgb([gray; 3])
-    }
-
-    struct Algo {
-        rng: StdRng,
-        plot: DiffPlot,
-        img: RgbImage,
-        step_count: i32,
-        queue: VecDeque<(i32, i32, i32)>,
-    }
-
-    let mut algo = Algo {
-        rng: StdRng::from_seed(make_seed(13512512)),
-        plot: DiffPlot::new(1024, 1024),
-        img: RgbImage::new(1024, 1024),
-        step_count: 20,
-        queue: VecDeque::from([(512, 512, 20)]),
-    };
-
-    const DISP_R: &[i32] = &[0, 1, 3, 5, 7, 11, -1, -3, -5, -7, -11];
-
-    fn algo_step(algo: &mut Algo, x: i32, y: i32, step: i32) {
-        if !in_bounds(x, y) {
-            return;
-        }
-        let disp_r: usize = algo.rng.random_range(0..DISP_R.len());
-        let disp_r = DISP_R[disp_r];
-        plot_circle(x, y, 12 + disp_r, |x, y| {
-            if !in_bounds(x, y) {
-                return;
-            }
-            if algo.plot.set(x as u32, y as u32, true) {
-                return;
-            }
-            algo.img.put_pixel(x as u32, y as u32, pix(algo.step_count, step));
-            if step != 0 {
-                algo.queue.push_back((x, y, step - 1));
-            }
-        });
-        fill_circle(x, y, 12 + disp_r, |x, y| {
-            if !in_bounds(x, y) {
-                return;
-            }
-            if algo.plot.set(x as u32, y as u32, true) {
-                return;
-            }
-            algo.img.put_pixel(x as u32, y as u32, pix(algo.step_count, step));
-        });
-    }
-    while let Some((x, y, step)) = algo.queue.pop_front() {
-        println!("{step} {:?}", pix(10, step));
-        algo_step(&mut algo, x, y, step);
-    }
-
-    // fill_circle(128, 128, 16, |x, y| {
-    //     if x < 0 || y < 0 || x >= 256 || y >= 256 {
-    //         return;
-    //     }
-    //     let x = x as u32;
-    //     let y = y as u32;
-    //     // img.put_pixel(x, y, Rgb([255, 0, 0]));
-    // });
-    // plot_circle(128, 128, 16, |x, y| {
-    //     if x < 0 || y < 0 || x >= 256 || y >= 256 {
-    //         return;
-    //     }
-    //     let x = x as u32;
-    //     let y = y as u32;
-    //     // img.put_pixel(x, y, Rgb([0, 255, 0]));
-    // });
-    algo.img.save("output.png").expect("Failed to save image.");
-}
-
-// All code beyond this point is old experiments. It can be ignored.
-
-grave!{
-    fn branch_experiment() {
-        pub struct Branch<I, F, T, R> {
-            false_: F,
-            true_: T,
-            _phantom: std::marker::PhantomData<(I, R)>
-        }
-        
-        impl<I, F, T, R> Branch<I, F, T, R>
-        where
-            F: FnMut(I) -> R,
-            T: FnMut(I) -> R,
-        {
-            pub const fn new(false_: F, true_: T) -> Self {
-                Self {
-                    false_,
-                    true_,
-                    _phantom: std::marker::PhantomData,
-                }
-            }
-        
-            pub fn branch(&mut self, branch: bool, input: I) -> R {
-                match branch 
-                {
-                    false => (self.false_)(input),
-                    true => (self.true_)(input),
-                }
-            }
-        }
-        
-        let mut branch = Branch::new(
-            |i: i32| i - 1,
-            |i: i32| i + 1,
-        );
-        println!("{}", branch.branch(false, 3));
-        println!("{}", branch.branch(true, 3));
-    }
-}
-
-macro_rules! prototype { ($($_:tt)*) => {} }
-
-prototype!(
-    struct Foo {
-        name: &'static str,
-    }
-
-    impl Foo {
-        pub fn new(name: &'static str) -> Self {
-            Self {
-                name,
-            }
-        }
-        
-        pub macro bar(self) {
-            () => {};
-            ($($name:ident),*) => {
-                $(
-                    self.$name();
-                )*
-            };
-        }
-        
-        fn fnord(&self) {
-            println!("fnord({})", self.name);
-        }
-        
-        fn fred(&self) {
-            println!("fred({})", self.name);
-        }
-        
-        fn baz(&self) {
-            println!("baz({})", self.name);
-        }
-    }
-    
-    
-    
-    fn main() {
-        let foo = Foo::new("Doobie");
-        foo.bar(fnord, fred, baz);
-    }
-);

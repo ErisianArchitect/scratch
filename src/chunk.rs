@@ -29,7 +29,7 @@ impl Chunk {
         // }
         // After
         let xyz = x | y | z;
-        if (xyz as u32) >= 64 {
+        if (xyz as u32) >= 64 { // this works because of twos-complement.
             return false;
         }
 
@@ -39,9 +39,6 @@ impl Chunk {
     }
 
     pub fn get_reflection(&self, x: i32, y: i32, z: i32) -> bool {
-        if x < 0 || y < 0 || z < 0 || x >= 64 || y >= 64 || z >= 64 {
-            return false;
-        }
         let xyz = x | y | z;
         if (xyz as u32) >= 64 {
             return false;
@@ -53,7 +50,7 @@ impl Chunk {
 
     pub fn set(&mut self, x: i32, y: i32, z: i32, on: bool) {
         let xyz = x | y | z;
-        if xyz >= 64 || xyz < 0 {
+        if (xyz as u32) >= 64 {
             return;
         }
         let index = Self::col_index(x, z);
@@ -68,7 +65,7 @@ impl Chunk {
 
     pub fn set_reflection(&mut self, x: i32, y: i32, z: i32, on: bool) {
         let xyz = x | y | z;
-        if xyz >= 64 || xyz < 0 {
+        if (xyz as u32) >= 64 {
             return;
         }
         let index = Self::col_index(x, z);
@@ -186,14 +183,6 @@ impl Chunk {
             // calculate distance to cross each plane
             let sign = ray.dir.signum();
             let step = sign.as_ivec3();
-            // let neg = sign.cmplt(Vec3A::ZERO);
-            // let pos = sign.cmpgt(Vec3A::ZERO);
-            // let less = neg & lt;
-            // let greater = pos & gt;
-            // let away = less | greater;
-            // if away.any() {
-            //     return None;
-            // }
             if step.x < 0 && lt.test(0)
             || step.x > 0 && gt.test(0)
             || step.y < 0 && lt.test(1)
@@ -485,40 +474,5 @@ impl RayHit {
         let max = pre_hit + UNSMIDGEN;
         // point.max(min).min(max)
         point.clamp(min, max)
-    }
-}
-
-#[test]
-fn size_test() {
-    println!("RayHit Size: {}", std::mem::size_of::<RayHit>());
-    println!("Option<RayHit> Size: {}", std::mem::size_of::<Option<RayHit>>());
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::tracegrid::GridSize;
-
-    use super::*;
-    #[test]
-    fn next_pow2() {
-        let size = GridSize::new(1920/2, 1080/2);
-        let w = size.width.next_power_of_two() - size.width;
-        let h = size.height.next_power_of_two() - size.height;
-        if w <= h {
-            println!("Width: {}\nNext Pow2: {}\nDifference: {}", size.width, size.width.next_power_of_two(), w);
-        } else {
-            println!("Height: {}\nNext Pow2: {}\nDifference: {}", size.height, size.height.next_power_of_two(), h);
-        }
-        let a = 1512;
-        let b = 5125;
-        println!("{}", (a | b) < 0);
-    }
-
-    #[test]
-    fn range_test() {
-        let v = -1i32;
-        if (v as u32) >= 64 {
-            println!("Yes");
-        }
     }
 }

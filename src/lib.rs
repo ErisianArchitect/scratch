@@ -1,14 +1,8 @@
-pub mod gamepad;
-pub mod dag;
-pub mod patrec;
+
 pub mod perlin;
 pub mod open_simplex;
-pub mod shared;
-pub mod diff_plot;
 pub mod math;
 pub mod chunk;
 pub mod camera;
 pub mod ray;
-pub mod tracegrid;
-pub mod voxel;
 pub mod cubemap;
