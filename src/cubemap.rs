@@ -1,6 +1,6 @@
-use std::{f32::MIN_POSITIVE, path::Path};
+use std::path::Path;
 
-use glam::{vec2, Vec2, Vec3A};
+use glam::Vec3A;
 use image::*;
 
 use crate::math::Face;
@@ -8,12 +8,19 @@ use crate::math::Face;
 pub struct Cubemap {
     faces: [RgbImage; 6],
     width: u32,
-    width_mult: f32,
     height: u32,
-    height_mult: f32,
 }
 
 impl Cubemap {
+
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+
+    pub fn height(&self) -> u32 {
+        self.height
+    }
+
     pub fn new(
         pos_x: RgbImage,
         pos_y: RgbImage,
@@ -24,9 +31,7 @@ impl Cubemap {
     ) -> Self {
         Self {
             width: pos_x.width(),
-            width_mult: pos_x.width() as f32,
             height: pos_x.height(),
-            height_mult: pos_x.height() as f32,
             faces: [
                 pos_x,
                 pos_y,
@@ -130,8 +135,6 @@ pub fn read_texture<P: AsRef<Path>>(path: P) -> std::io::Result<RgbImage> {
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
-
-    use glam::vec2;
 
     use super::*;
     #[test]
