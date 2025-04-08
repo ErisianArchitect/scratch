@@ -267,12 +267,21 @@ impl Shadow {
 pub struct AmbientLight {
     pub color: Vec3A,
     pub intensity: f32,
+    pub pre_calc: Vec3A,
 }
 
 impl AmbientLight {
+    pub fn new(color: Vec3A, intensity: f32) -> Self {
+        Self {
+            color,
+            intensity,
+            pre_calc: color * intensity,
+        }
+    }
+
     #[inline(always)]
     pub fn apply(self, color: Vec3A) -> Vec3A {
-        self.color * color
+        self.pre_calc * color
     }
 }
 
@@ -339,8 +348,50 @@ pub struct TraceData {
     reflection_steps: u16,
 }
 
+// #[test]
+// fn quick_test() {
+//     use std::collections::VecDeque;
+//     let a = "hello";
+//     let b = "world";
+//     let mut items = vec![];
+//     let mut items = VecDeque::new();
+//     let mut final_answer = 0;
+//     items.push
+//     items.windows(size)
+//     assert_eq!(final_answer, 3 * 12 * 4);
+// }
+
+struct ReflectionAccum {
+    color_accum: [Vec3A; 8],
+    reflectivity_accum: [f32; 8],
+    index: usize,
+}
+
+// [diffuse7, diffuse6, diffuse5, diffuse4,
+//  diffuse3, diffuse2, diffuse1, diffuse0]
+// [
+//  diffuse6 = combine(diffuse7, diffuse6, reflectivity6),
+//  diffuse5 = combine(diffuse6, diffuse5, reflectivity5),
+//  diffuse4 = combine(diffuse5, diffuse4, reflectivity4),
+//  diffuse3 = combine(diffuse4, diffuse3, reflectivity3),
+//  diffuse2 = combine(diffuse3, diffuse2, reflectivity2),
+//  diffuse1 = combine(diffuse2, diffuse1, reflectivity1),
+//  diffuse0 = combine(diffuse1, diffuse0, reflectivity0),
+// ]
+
+impl ReflectionAccum {
+    pub const fn new() -> Self {
+        Self {
+            color_accum: [Vec3A::NAN; 8],
+            reflectivity_accum: [f32::NAN; 8],
+            index: 7,
+        }
+    }
+}
+
 impl TraceData {
     /// Calculates the color of a hit point before reflection calculation. This will also calculate shadow.
+    #[inline(always)]
     pub fn calc_color_before_reflections(&self, hit_point: Vec3A, hit_normal: Vec3A) -> Vec3A {
         let color = self.pos_color.get(hit_point);
         let light_ray = Ray3::new(hit_point, self.lighting.directional.inv_dir);
@@ -349,6 +400,7 @@ impl TraceData {
     }
 
     /// Calculates the grayscale color of a hit point before reflection calculation without a diffuse color. This will also calculate shadow.
+    #[inline(always)]
     pub fn calc_color_before_reflections_no_diffuse(&self, hit_point: Vec3A, hit_normal: Vec3A) -> Vec3A {
         let color = Vec3A::ONE;
         let light_ray = Ray3::new(hit_point, self.lighting.directional.inv_dir);
@@ -356,26 +408,40 @@ impl TraceData {
         self.lighting.calculate(color, hit_normal, light_hit.is_some())
     }
 
+    // pub fn trace_reflections_iterative(&self, ray: Ray3, near: f32, far: f32, steps: u16) -> Vec3A {
+    //     let Some(hit) = self.chunk.raycast(ray, far) else {
+    //         return self.sky_color(ray.dir);
+    //     };
+    //     let Some(face) = hit.face else {
+    //         return Vec3A::X;
+    //     };
+    //     let hit_point = hit.get_hit_point(ray, face);
+    //     let hit_normal = face.normal();
+        
+    //     for _step in 0..steps {
+
+    //     }
+    // }
+
     /// Trace reflections for exact number of steps and calculate the color.
-    pub fn trace_reflections(&self, ray: Ray3, near: f32, far: f32, steps: u16) -> Option<Vec3A> {
+    pub fn trace_reflections(&self, ray: Ray3, near: f32, far: f32, steps: u16) -> Vec3A {
         let Some(hit) = self.chunk.raycast(ray, far) else {
             // no hit, so return the sky color.
-            return Some(self.sky_color(ray.dir));
+            return self.sky_color(ray.dir);
         };
         let Some(face) = hit.face else {
             // If there was no hit face, return Red so that it's clear that no hit was made.
             // this is useful for debugging since the camera will most likely be outside of the bounds of the scene, so there should be no red.
             // If there is red visible, that means that the ray is penetrating too far into the cube.
-            return Some(Vec3A::X);
+            return Vec3A::X;
         };
         // The ray is too close, so return Green. (for debugging purposes)
         if hit.distance < near {
-            return Some(Vec3A::Y);
+            return Vec3A::Y;
         }
 
         let hit_point = hit.get_hit_point(ray, face);
         let hit_normal = face.normal();
-        let hit_fract = hit_point.fract();
         /// easy way to mix up colors is to create a checkerboard pattern.
         let checker = checkerboard(hit.coord.x, hit.coord.y, hit.coord.z);
         let checker_color = if checker {
@@ -392,41 +458,36 @@ impl TraceData {
             x < 0.05 || y < 0.05 || x >= 0.95 || y >= 0.95
         }
         /// Check if we need to trace more reflections. (this will test if the hit surface is reflective).
-        if steps > 1 && self.chunk.get_reflection(hit.coord.x, hit.coord.y, hit.coord.z) {
+        if steps != 0 && self.chunk.get_reflection(hit.coord.x, hit.coord.y, hit.coord.z) {
             let reflect_dir = reflect(ray.dir, hit_normal);
             let reflect_ray = Ray3::new(hit_point, reflect_dir);
             let reflectivity = self.reflection.calculate(hit_normal, ray.dir);
-            let Some(reflection) = self.trace_reflections(reflect_ray, 0.0, far - hit.distance, steps - 1) else {
-                // return Some(combine_reflection(reflectivity, diffuse, self.sky_color(reflect_dir)));
-                // No hit from the reflection trace, so return the diffuse color.
-                return Some(diffuse);
-            };
+            let reflection = self.trace_reflections(reflect_ray, 0.0, far - hit.distance, steps - 1);
             let final_color = combine_reflection(reflectivity, diffuse, reflection);
-            Some(final_color)
+            final_color
         } else {
             // no reflection in this branch, so just return the diffuse color.
             // Edge detection to draw grid-lines.
+            let hit_fract = hit_point.fract();
             match face {
                 Face::PosX | Face::NegX if on_edge(hit_fract.y, hit_fract.z) => diffuse = diffuse * 0.1,
                 Face::PosY | Face::NegY if on_edge(hit_fract.x, hit_fract.z) => diffuse = diffuse * 0.1,
                 Face::PosZ | Face::NegZ if on_edge(hit_fract.x, hit_fract.y) => diffuse = diffuse * 0.1,
                 _ => (),
             }
-            Some(diffuse)
+            diffuse
         }
     }
 
     /// This is the meat of the program. Just a simple `trace_color` method that returns the color that a ray "receives".
     /// This includes lighting and reflection calculations.
+    #[inline(always)]
     pub fn trace_color(&self, ray: Ray3, near: f32, far: f32) -> Vec3A {
-        if let Some(color) = self.trace_reflections(ray, near, far, self.reflection_steps) {
-            color
-        } else {
-            self.sky_color(ray.dir)
-        }
+        self.trace_reflections(ray, near, far, self.reflection_steps)
     }
 
     /// Calculate the sky color given the ray direction. This will sample a cubemap.
+    #[inline(always)]
     pub fn sky_color(&self, ray_dir: Vec3A) -> Vec3A {
         let rgb = self.skybox.sample_dir(ray_dir);
         let color = vec3a(
@@ -438,16 +499,27 @@ impl TraceData {
     }
 }
 
+#[test]
+fn u64_test() {
+    #[repr(C)]
+    struct U64 {
+        low: u32,
+        high: u32,
+    }
+    let value = U64 { high: 0, low: 1234 };
+    let u64_value: u64 = unsafe {
+        std::mem::transmute(value)
+    };
+    assert_eq!(u64_value, 1234);
+}
+
 /// For creating a 3D checkerboard pattern.
+#[inline(always)]
 fn checkerboard(x: i32, y: i32, z: i32) -> bool {
     ((x & 1) ^ (y & 1) ^ (z & 1)) != 0
 }
 
 pub fn raycast_scene() {
-    // Super Sampling Anti-aliasing.
-    // Setting this to true means that the scene will render at twice the resolution then downsample to the target resolution.
-    // Perhaps the more optimal way to do this would be to shoot for rays for each pixel instead of just one, but I haven't gotten that far yet.
-    const SSAA: bool = true;
     println!("Starting.");
     let start = Instant::now();
     let skybox = {
@@ -482,10 +554,15 @@ pub fn raycast_scene() {
         bsimp,
         scale: 1.0,
     };
+    // Super Sampling Anti-aliasing.
+    // Setting this to true means that the scene will render at twice the resolution then downsample to the target resolution.
+    // Perhaps the more optimal way to do this would be to shoot for rays for each pixel instead of just one, but I haven't gotten that far yet.
+    const SSAA: bool = false;
     // let perm = Permutation::from_seed(make_seed(SEED as u64));
     // I've left several grid sizes here to test out different resolutions.
     // let size = GridSize::new(512, 512);
     // let size = GridSize::new(2048, 2048);
+    // let size = GridSize::new(640, 480);
     // let size = GridSize::new(1280, 720);
     // let size = GridSize::new(1920, 1080); // FHD
     let size = GridSize::new(1920*2, 1080*2); // 4K
@@ -514,12 +591,14 @@ pub fn raycast_scene() {
             directional: DirectionalLight::new(
                 vec3a(0.5, -1.0, -1.0).normalize(),
                 vec3a(1.0, 1.0, 1.0),
-                0.5,
+                1.0,
             ),
-            ambient: AmbientLight {
-                color: vec3a(1.0, 1.0, 1.0),
-                intensity: 1.0,
-            },
+            ambient: AmbientLight::new(
+                // color
+                Vec3A::ONE,
+                // intensity
+                1.0,
+            ),
             shadow: Shadow {
                 factor: 0.2,
             },
@@ -529,7 +608,7 @@ pub fn raycast_scene() {
         sky_color: Vec3A::splat(2.0),
         reflection: Reflection { reflectivity: 0.5 },
         // reflection: Reflection { reflectivity: 1.0 },
-        reflection_steps: 5,
+        reflection_steps: 3,
     };
 
     let ray_calc = RayCalc::new(cam.fov, cam.screen_size);
