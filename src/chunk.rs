@@ -16,23 +16,34 @@ impl Chunk {
         }
     }
 
+    #[inline(always)]
     pub fn col_index(x: i32, z: i32) -> i32 {
-        (x & 0b111111) | ((z & 0b111111) << 6)
+        x | z << 6
     }
 
+    #[inline(always)]
     pub fn get(&self, x: i32, y: i32, z: i32) -> bool {
+        // Before
+        // if x < 0 || y < 0 || z < 0 || x >= 64 || y >= 64 || z >= 64 {
+        //     return false;
+        // }
+        // After
         let xyz = x | y | z;
-        if xyz >= 64 || xyz < 0 {
+        if (xyz as u32) >= 64 {
             return false;
         }
+
         let index = Self::col_index(x, z);
         let col = self.cols[index as usize];
         (col & (1 << y)) != 0
     }
 
     pub fn get_reflection(&self, x: i32, y: i32, z: i32) -> bool {
+        if x < 0 || y < 0 || z < 0 || x >= 64 || y >= 64 || z >= 64 {
+            return false;
+        }
         let xyz = x | y | z;
-        if xyz >= 64 || xyz < 0 {
+        if (xyz as u32) >= 64 {
             return false;
         }
         let index = Self::col_index(x, z);
@@ -175,6 +186,14 @@ impl Chunk {
             // calculate distance to cross each plane
             let sign = ray.dir.signum();
             let step = sign.as_ivec3();
+            // let neg = sign.cmplt(Vec3A::ZERO);
+            // let pos = sign.cmpgt(Vec3A::ZERO);
+            // let less = neg & lt;
+            // let greater = pos & gt;
+            // let away = less | greater;
+            // if away.any() {
+            //     return None;
+            // }
             if step.x < 0 && lt.test(0)
             || step.x > 0 && gt.test(0)
             || step.y < 0 && lt.test(1)
@@ -243,12 +262,17 @@ impl Chunk {
             if max_min >= min_max {
                 return None;
             }
-            ray.pos = ray.pos + ray.dir * (max_min + 1e-5);
+            const RAY_PENETRATION: f32 = 1e-5;
+            let delta_add = max_min + RAY_PENETRATION;
+            if delta_add >= max_distance {
+                return None;
+            }
+            ray.pos = ray.pos + ray.dir * delta_add;
             (
                 step,
                 Some(vec3(dx_min, dy_min, dz_min)),
                 vec3(dx_max, dy_max, dz_max),
-                max_min + 1e-5,
+                delta_add,
             )
         } else {
             let sign = ray.dir.signum();
@@ -296,9 +320,6 @@ impl Chunk {
                 0.0,
             )
         };
-        if delta_add >= max_distance {
-            return None;
-        }
         fn calc_delta(mag: f32) -> f32 {
             1.0 / mag.abs().max(<f32>::MIN_POSITIVE)
         }
@@ -365,105 +386,16 @@ impl Chunk {
                 distance: delta_add,
             });
         }
+        let max_d = vec3a(
+            delta_max.x.min(max_distance),
+            delta_max.y.min(max_distance),
+            delta_max.z.min(max_distance),
+        );
         loop {
-            // let lhs = Vec3A::new(t_max.x, t_max.x, t_max.y);
-            // let rhs = Vec3A::new(t_max.y, t_max.z, t_max.z);
-            // let lte = lhs.cmple(rhs);
-            // match lte.bitmask() {
-            //     // y < x, z < x, z < y
-            //     0b000 => {
-            //         let lhs = vec3a(t_max.z, t_max.z, 0.0);
-            //         let rhs = vec3a(delta_max.z, max_distance, <f32>::INFINITY);
-            //         let result = lhs.cmpge(rhs);
-            //         if result.any() {
-            //             return None;
-            //         }
-            //         cell.z += step.z;
-            //         if self.get(cell.x, cell.y, cell.z) {
-            //             return Some(RayHit::hit_face(face.2, cell, t_max.z));
-            //         }
-            //         t_max.z += delta.z;
-            //     }
-            //     // x <= y, z < x, z < y
-            //     0b001 => {
-            //         let lhs = vec3a(t_max.z, t_max.z, 0.0);
-            //         let rhs = vec3a(delta_max.z, max_distance, <f32>::INFINITY);
-            //         let result = lhs.cmpge(rhs);
-            //         if result.any() {
-            //             return None;
-            //         }
-            //         cell.z += step.z;
-            //         if self.get(cell.x, cell.y, cell.z) {
-            //             return Some(RayHit::hit_face(face.2, cell, t_max.z));
-            //         }
-            //         t_max.z += delta.z;
-            //     }
-            //     // y < x, x <= z, z < y
-            //     0b010 => unreachable!("Impossible state."),
-            //     // x <= y, x <= z, z < y
-            //     0b011 => {
-            //         let lhs = vec3a(t_max.x, t_max.x, 0.0);
-            //         let rhs = vec3a(delta_max.x, max_distance, <f32>::INFINITY);
-            //         let result = lhs.cmpge(rhs);
-            //         if result.any() {
-            //             return None;
-            //         }
-            //         cell.x += step.x;
-            //         if self.get(cell.x, cell.y, cell.z) {
-            //             return Some(RayHit::hit_face(face.0, cell, t_max.x));
-            //         }
-            //         t_max.x += delta.x;
-            //     }
-            //     // y < x, z < x, y <= z
-            //     0b100 => {
-            //         let lhs = vec3a(t_max.y, t_max.y, 0.0);
-            //         let rhs = vec3a(delta_max.y, max_distance, <f32>::INFINITY);
-            //         let result = lhs.cmpge(rhs);
-            //         if result.any() {
-            //             return None;
-            //         }
-            //         cell.y += step.y;
-            //         if self.get(cell.x, cell.y, cell.z) {
-            //             return Some(RayHit::hit_face(face.1, cell, t_max.y));
-            //         }
-            //         t_max.y += delta.y;
-            //     }
-            //     // x <= y, z < x, y <= z
-            //     0b101 => unreachable!("Impossible state."),
-            //     // y < x, x <= z, y <= z
-            //     0b110 => {
-            //         let lhs = vec3a(t_max.y, t_max.y, 0.0);
-            //         let rhs = vec3a(delta_max.y, max_distance, <f32>::INFINITY);
-            //         let result = lhs.cmpge(rhs);
-            //         if result.any() {
-            //             return None;
-            //         }
-            //         cell.y += step.y;
-            //         if self.get(cell.x, cell.y, cell.z) {
-            //             return Some(RayHit::hit_face(face.1, cell, t_max.y));
-            //         }
-            //         t_max.y += delta.y;
-            //     }
-            //     // x <= y, x <= z, y <= z
-            //     0b111 => {
-            //         let lhs = vec3a(t_max.x, t_max.x, 0.0);
-            //         let rhs = vec3a(delta_max.x, max_distance, <f32>::INFINITY);
-            //         let result = lhs.cmpge(rhs);
-            //         if result.any() {
-            //             return None;
-            //         }
-            //         cell.x += step.x;
-            //         if self.get(cell.x, cell.y, cell.z) {
-            //             return Some(RayHit::hit_face(face.0, cell, t_max.x));
-            //         }
-            //         t_max.x += delta.x;
-            //     }
-            //     _ => unreachable!("Impossible state."),
-            // }
 
             if t_max.x <= t_max.y {
                 if t_max.x <= t_max.z {
-                    if t_max.x >= delta_max.x || t_max.x >= max_distance {
+                    if t_max.x >= max_d.x {
                         return None;
                     }
                     cell.x += step.x;
@@ -472,7 +404,7 @@ impl Chunk {
                     }
                     t_max.x += delta.x;
                 } else {
-                    if t_max.z >= delta_max.z || t_max.z >= max_distance {
+                    if t_max.z >= max_d.z {
                         return None;
                     }
                     cell.z += step.z;
@@ -483,7 +415,7 @@ impl Chunk {
                 }
             } else {
                 if t_max.y <= t_max.z {
-                    if t_max.y >= delta_max.y || t_max.y >= max_distance {
+                    if t_max.y >= max_d.y {
                         return None;
                     }
                     cell.y += step.y;
@@ -492,7 +424,7 @@ impl Chunk {
                     }
                     t_max.y += delta.y;
                 } else {
-                    if t_max.z >= delta_max.z || t_max.z >= max_distance {
+                    if t_max.z >= max_d.z {
                         return None;
                     }
                     cell.z += step.z;
@@ -513,6 +445,7 @@ pub struct RayHit {
 }
 
 impl RayHit {
+    #[inline(always)]
     pub fn hit_face(face: Face, coord: IVec3, distance: f32) -> Self {
         Self {
             face: Some(face),
@@ -521,6 +454,7 @@ impl RayHit {
         }
     }
 
+    #[inline(always)]
     pub fn hit_cell(coord: IVec3, distance: f32) -> Self {
         Self {
             face: None,
@@ -532,19 +466,22 @@ impl RayHit {
     #[inline(always)]
     pub fn get_hit_point(&self, ray: Ray3, face: Face) -> Vec3A {
         let point = ray.point_on_ray(self.distance);
-        let pre_hit = self.coord + match face {
-            Face::PosX => ivec3(1, 0, 0),
-            Face::PosY => ivec3(0, 1, 0),
-            Face::PosZ => ivec3(0, 0, 1),
-            Face::NegX => ivec3(-1, 0, 0),
-            Face::NegY => ivec3(0, -1, 0),
-            Face::NegZ => ivec3(0, 0, -1),
+        let pre_hit = match face {
+            Face::PosX => ivec3(self.coord.x + 1, self.coord.y, self.coord.z),
+            Face::PosY => ivec3(self.coord.x, self.coord.y + 1, self.coord.z),
+            Face::PosZ => ivec3(self.coord.x, self.coord.y, self.coord.z + 1),
+            Face::NegX => ivec3(self.coord.x - 1, self.coord.y, self.coord.z),
+            Face::NegY => ivec3(self.coord.x, self.coord.y - 1, self.coord.z),
+            Face::NegZ => ivec3(self.coord.x, self.coord.y, self.coord.z - 1),
         };
         let pre_hit = pre_hit.as_vec3a();
         const SMIDGEN: Vec3A = Vec3A::splat(1e-3);
         const UNSMIDGEN: Vec3A = Vec3A::splat(1.0-1e-3);
+        // sometimes the hit-point is in the wrong cell (if it goes too far)
+        // so you want to bring it back into the correct cell.
         let min = pre_hit + SMIDGEN;
         let max = pre_hit + UNSMIDGEN;
+        // point.max(min).min(max)
         point.clamp(min, max)
     }
 }
@@ -573,5 +510,13 @@ mod tests {
         let a = 1512;
         let b = 5125;
         println!("{}", (a | b) < 0);
+    }
+
+    #[test]
+    fn range_test() {
+        let v = -1i32;
+        if (v as u32) >= 64 {
+            println!("Yes");
+        }
     }
 }
