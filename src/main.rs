@@ -14,6 +14,7 @@ use rand::{rngs::StdRng, Rng, SeedableRng};
 use scratch::{camera::Camera, chunk::{self, Chunk, RayHit}, cubemap::Cubemap, math::{self, Face}, open_simplex::open_simplex_2d, perlin::{make_seed, Permutation}, ray::Ray3};
 use sha2::digest::typenum::Diff;
 
+// do while loop, do[lo]op.
 macro_rules! doop {
     ($($name:lifetime : )? $block:block while $condition:expr) => {
         $($name :)?loop {
