@@ -320,6 +320,7 @@ impl Chunk {
                 0.0,
             )
         };
+        #[inline(always)]
         fn calc_delta(mag: f32) -> f32 {
             1.0 / mag.abs().max(<f32>::MIN_POSITIVE)
         }
@@ -349,6 +350,7 @@ impl Chunk {
 
         let fract = ray.pos.fract();
 
+        #[inline(always)]
         fn calc_t_max(step: i32, fract: f32, mag: f32) -> f32 {
             if step > 0 {
                 (1.0 - fract) / mag.abs().max(<f32>::MIN_POSITIVE)
