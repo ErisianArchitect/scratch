@@ -436,13 +436,6 @@ fn checkerboard(x: i32, y: i32, z: i32) -> bool {
     ((x & 1) ^ (y & 1) ^ (z & 1)) != 0
 }
 
-#[test]
-fn max_dist() {
-    let sq64: f32 = 64.0 * 64.0;
-    let dist: f32 = (sq64 + sq64 + sq64).sqrt();
-    println!("{dist}");
-}
-
 pub fn raycast_scene() {
     println!("Starting.");
     let start = Instant::now();
