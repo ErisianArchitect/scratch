@@ -9,7 +9,6 @@ use rayon::prelude::*;
 use noise::OpenSimplex;
 use scratch::cubemap::*;
 use image::{Rgb, RgbImage, Rgba, RgbaImage};
-use itertools::Itertools;
 use noise::NoiseFn;
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use scratch::{camera::Camera, chunk::{self, Chunk, RayHit}, cubemap::Cubemap, math::{self, Face}, open_simplex::open_simplex_2d, perlin::{make_seed, Permutation}, ray::Ray3};
