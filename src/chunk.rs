@@ -28,6 +28,11 @@ impl Chunk {
         //     return false;
         // }
         // After
+        // This is a neat bit level trick to bounds check x, y, and z
+        // simultaneously. This works because of Two's Complement, which
+        // causes negative numbers to become exceedingly high positive
+        // numbers when cast to an unsigned type.
+        // This reduces the bounds check from 11 instructions down to just 4.
         let xyz = x | y | z;
         if (xyz as u32) >= 64 { // this works because of twos-complement.
             return false;
@@ -38,7 +43,13 @@ impl Chunk {
         (col & (1 << y)) != 0
     }
 
+    #[inline(always)]
     pub fn get_reflection(&self, x: i32, y: i32, z: i32) -> bool {
+        // Before
+        // if x < 0 || y < 0 || z < 0 || x >= 64 || y >= 64 || z >= 64 {
+        //     return false;
+        // }
+        // After
         let xyz = x | y | z;
         if (xyz as u32) >= 64 {
             return false;
@@ -176,21 +187,28 @@ impl Chunk {
         let mut ray = ray;
         let lt = ray.pos.cmplt(Vec3A::ZERO);
         const SIXTY_FOUR: Vec3A = Vec3A::splat(64.0);
-        let gt = ray.pos.cmpge(SIXTY_FOUR);
-        let outside = lt | gt;
+        let ge = ray.pos.cmpge(SIXTY_FOUR);
+        let outside = lt | ge;
         let (step, delta_min, delta_max, delta_add) = if outside.any() {
             // Calculate entry point (if there is one).
             // calculate distance to cross each plane
             let sign = ray.dir.signum();
             let step = sign.as_ivec3();
-            if step.x < 0 && lt.test(0)
-            || step.x > 0 && gt.test(0)
-            || step.y < 0 && lt.test(1)
-            || step.y > 0 && gt.test(1)
-            || step.z < 0 && lt.test(2)
-            || step.z > 0 && gt.test(2) {
+
+            let neg_sign = sign.cmplt(Vec3A::ZERO);
+            let pos_sign = sign.cmpgt(Vec3A::ZERO);
+
+            if ((lt & neg_sign) | (ge & pos_sign)).any() {
                 return None;
             }
+            // if lt.test(0) && step.x < 0 // 4
+            // || lt.test(1) && step.y < 0 // 5 9
+            // || lt.test(2) && step.z < 0 // 5 14
+            // || ge.test(0) && step.x > 0 // 5 19
+            // || ge.test(1) && step.y > 0 // 5 24
+            // || ge.test(2) && step.z > 0 {// 5 29
+            //     return None;
+            // }
             let (dx_min, dx_max) = match step.x + 1 {
                 0 => {
                     (
@@ -251,6 +269,10 @@ impl Chunk {
             if max_min >= min_max {
                 return None;
             }
+            // This is needed to penetrate the ray into the bounding box.
+            // Otherwise you'll get weird circles from the rays popping
+            // in and out of the next cell. This ensures that the ray
+            // will be inside the bounding box.
             const RAY_PENETRATION: f32 = 1e-5;
             let delta_add = max_min + RAY_PENETRATION;
             if delta_add >= max_distance {
