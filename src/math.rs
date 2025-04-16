@@ -32,7 +32,7 @@ impl Face {
     }
 
     #[inline]
-    pub fn normal(self) -> Vec3A {
+    pub const fn normal(self) -> Vec3A {
         match self {
             Face::PosX => Vec3A::X,
             Face::PosY => Vec3A::Y,
