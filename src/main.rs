@@ -625,16 +625,16 @@ pub fn raycast_scene() {
     // Super Sampling Anti-aliasing.
     // Setting this to true means that the scene will render at twice the resolution then downsample to the target resolution.
     // Perhaps the more optimal way to do this would be to shoot for rays for each pixel instead of just one, but I haven't gotten that far yet.
-    const SSAA: bool = true;
+    const SSAA: bool = false;
     let perm = Permutation::from_seed(make_seed(SEED as u64));
     // I've left several grid sizes here to test out different resolutions.
     // let size = Size::new(512, 512);
     // let size = Size::new(2048, 2048);
     // let size = Size::new(640, 480);
     // let size = Size::new(1280, 720);
-    // let size = Size::new(1920, 1080); // FHD
+    let size = Size::new(1920, 1080); // FHD
     // let size = Size::new(1920*2, 1080*2); // 4K
-    let size = Size::new(1920*4, 1080*4); // 8K
+    // let size = Size::new(1920*4, 1080*4); // 8K
 
     let size = if SSAA {
         Size::new(size.width * 2, size.height * 2)
@@ -937,12 +937,20 @@ pub fn raycast_scene() {
     {
         let trace = &trace;
         let rays = rays.as_slice();
+        let counter = std::sync::Arc::new(AtomicU64::new(0));
+        let progress = indicatif::ProgressBar::new(rays.len() as u64);
+        let prog = &progress;
         img.par_pixels_mut().enumerate().for_each(move |(i, pixel)| {
             let ray = Ray3::new(cam_pos, rays[i]);
             let color = trace.trace_color(ray, near, far);
             *pixel = rgb(color.x, color.y, color.z);
+            // let count = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            // if count % 1000000 == 0 {
+            //     prog.set_position(count);
+            // }
             return;
         });
+        prog.finish_and_clear();
     }
     let elapsed = start.elapsed();
     println!("Rendered {size} image in {elapsed:.3?}");
